@@ -46,6 +46,18 @@ export const UPGRADES = [
   { id: 'spirit',  name: 'Savaş Ruhu',    icon: 'flame',  baseCost: 3000, growth: 1.6,  max: Infinity, desc: 'Yoldaş hasarının bir kısmı dokunuşa eklenir' },
 ];
 
+// Active skills: used from the skill bar, then they cool down. They unlock at `unlockStage`
+// (in the current run) and are leveled with gold; effect per level is in logic.skillPower.
+// `cooldown` starts when the skill is used, so it includes `duration`.
+export const SKILLS = [
+  { id: 'rage',     name: 'Öfke',            icon: 'skRage',  unlockStage: 5,  baseCost: 300,   growth: 4, max: 10, duration: 30, cooldown: 300, color: '#ef7d57' },
+  { id: 'warcry',   name: 'Savaş Narası',    icon: 'skHorn',  unlockStage: 12, baseCost: 3000,  growth: 4, max: 10, duration: 30, cooldown: 300, color: '#ffcd75' },
+  { id: 'storm',    name: 'Kılıç Fırtınası', icon: 'skStorm', unlockStage: 20, baseCost: 4e4,   growth: 4, max: 10, duration: 20, cooldown: 600, color: '#73eff7' },
+  { id: 'focus',    name: 'Keskin Bakış',    icon: 'skEye',   unlockStage: 30, baseCost: 8e5,   growth: 4, max: 10, duration: 30, cooldown: 480, color: '#41a6f6' },
+  { id: 'goldRain', name: 'Altın Yağmuru',   icon: 'skCoins', unlockStage: 40, baseCost: 2e7,   growth: 4, max: 10, duration: 0,  cooldown: 900, color: '#ffcd75' },
+];
+export const MAX_SKILL_CRIT_CHANCE = 0.95;
+
 // Companions that deal damage per second. `sprite` picks the body, `colors` recolors it,
 // `shot` and `shotColor` drive the projectile they throw at the enemy.
 export const HELPERS = [

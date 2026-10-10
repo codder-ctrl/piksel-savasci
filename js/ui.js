@@ -1,5 +1,5 @@
 import {
-  UPGRADES, HELPERS, ZONES, KILLS_PER_STAGE, BOSS_TIME, PRESTIGE_MIN_STAGE, SOUL_BONUS,
+  UPGRADES, HELPERS, SKILLS, ZONES, KILLS_PER_STAGE, BOSS_TIME, PRESTIGE_MIN_STAGE, SOUL_BONUS,
   MILESTONE_EVERY, SPIRIT_STEP,
 } from './config.js';
 import * as L from './logic.js';
@@ -71,6 +71,25 @@ function upgradeEffect(def, state, now, next, maxed) {
 
 const nextMilestone = (level) => (Math.floor(level / MILESTONE_EVERY) + 1) * MILESTONE_EVERY;
 
+// Label and value format of each skill's power (see logic.skillPower).
+const SKILL_TEXT = {
+  rage: ['Dokunuş', (p) => '×' + fmt(p)],
+  warcry: ['Yoldaş hasarı', (p) => '×' + fmt(p)],
+  storm: ['Otomatik vuruş', (p) => `${fmt(p)}/sn`],
+  focus: ['Kritik şansı', (p) => '+' + pct(p)],
+  goldRain: ['Anında altın', (p) => `${fmt(p)} düşman`],
+};
+
+const minutes = (sec) => (sec >= 60 ? `${sec / 60} dk` : `${sec} sn`);
+const clock = (sec) => {
+  sec = Math.ceil(sec);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+};
+
+function skillTiming(def) {
+  return def.duration ? `${def.duration} sn sürer · bekleme ${minutes(def.cooldown)}` : `Anında · bekleme ${minutes(def.cooldown)}`;
+}
+
 export function createUI(h) {
   const icons = {};
   const icon = (name, colors) => {
@@ -84,7 +103,7 @@ export function createUI(h) {
     zone: $('zone-name'), stage: $('stage-label'), prev: $('stage-prev'), next: $('stage-next'),
     enemyName: $('enemy-name'), progress: $('enemy-progress'), hpFill: $('hp-fill'), hpText: $('hp-text'),
     timerBar: $('timer-bar'), timerFill: $('timer-fill'), timerText: $('timer-text'),
-    auto: $('auto-btn'), hint: $('tap-hint'), buyBar: $('buy-bar'),
+    auto: $('auto-btn'), hint: $('tap-hint'), buyBar: $('buy-bar'), skillBar: $('skill-bar'), skillList: $('skill-list'),
     summary: $('hero-summary'), upgradeList: $('upgrade-list'), helperList: $('helper-list'),
     rbSouls: $('rb-souls'), rbBonus: $('rb-bonus'), rbStage: $('rb-stage'), rbGain: $('rb-gain'), rbBtn: $('rb-btn'), rbNote: $('rb-note'),
     stats: $('stats'), soundBtn: $('sound-btn'), toast: $('toast'),
@@ -95,6 +114,7 @@ export function createUI(h) {
 
   let tab = 'hero';
   const tabButtons = [...document.querySelectorAll('#tabs .tab')];
+  const tabButton = (name) => tabButtons.find((b) => b.dataset.tab === name);
   const pages = [...document.querySelectorAll('#pages .page')];
   function setTab(name) {
     tab = name;
@@ -103,7 +123,7 @@ export function createUI(h) {
       b.setAttribute('aria-selected', String(b.dataset.tab === name));
     }
     for (const p of pages) p.hidden = p.dataset.tab !== name;
-    el.buyBar.hidden = !(name === 'hero' || name === 'party');
+    el.buyBar.hidden = !['hero', 'party', 'skills'].includes(name);
     $('pages').scrollTop = 0;
   }
   tabButtons.forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -157,7 +177,84 @@ export function createUI(h) {
     return c;
   });
 
-  const summaryRows = ['Dokunuş', 'Kritik', 'Altın', 'Ruh bonusu'].map((label) => {
+  const skillCards = SKILLS.map((def) => {
+    const c = makeCard(icon(def.icon), () => h.buy('skill', def.id));
+    set(c.name, def.name);
+    el.skillList.append(c.card);
+    return c;
+  });
+
+  // Updates the skills tab; returns whether any skill level is affordable (for the tab badge).
+  function updateSkillCards(state, amount) {
+    let afford = false;
+    SKILLS.forEach((def, i) => {
+      const c = skillCards[i];
+      const level = state.skills[def.id];
+      const unlocked = L.skillUnlocked(state, def);
+      c.card.classList.toggle('locked', !unlocked);
+      set(c.lvl, level > 0 ? `Sv. ${level}` : '');
+      set(c.note, skillTiming(def));
+      if (!unlocked) {
+        set(c.desc, `${def.unlockStage}. bölümde açılır`);
+        set(c.label, 'Kilitli');
+        set(c.cost, fmt(def.baseCost));
+        c.btn.disabled = true;
+        return;
+      }
+      const plan = L.purchasePlan(def, level, state.gold, amount);
+      const maxed = plan.n === 0;
+      const [label, value] = SKILL_TEXT[def.id];
+      const now = value(L.skillPower(def.id, level));
+      const next = value(L.skillPower(def.id, level + plan.n));
+      set(c.desc, level === 0 ? `${label}: ${next}` : maxed ? `${label}: ${now}` : `${label}: ${now} → ${next}`);
+      set(c.label, maxed ? 'MAKS' : level === 0 && plan.n === 1 ? 'Öğren' : `+${plan.n}`);
+      set(c.cost, maxed ? '—' : fmt(plan.cost));
+      c.btn.disabled = maxed || plan.cost > state.gold;
+      if (!maxed && L.costFor(def, level) <= state.gold) afford = true;
+    });
+    return afford;
+  }
+
+  // Skill bar over the battle ground. Cooling buttons stay clickable (aria-disabled) so a tap
+  // on them doesn't fall through to the battle as an attack.
+  const skillButtons = SKILLS.map((def, i) => {
+    const btn = make('button', 'skill-btn');
+    btn.type = 'button';
+    btn.title = `${def.name} (${i + 1})`;
+    btn.setAttribute('aria-label', def.name);
+    btn.style.setProperty('--skill', def.color);
+    const img = make('img');
+    img.alt = '';
+    img.src = icon(def.icon);
+    const shade = make('span', 'skill-shade');
+    const time = make('span', 'skill-time');
+    btn.append(img, shade, time);
+    btn.addEventListener('click', () => h.useSkill(def.id));
+    el.skillBar.append(btn);
+    return { btn, shade, time };
+  });
+
+  function updateSkillBar(state) {
+    let any = false;
+    SKILLS.forEach((def, i) => {
+      const s = skillButtons[i];
+      const owned = state.skills[def.id] > 0;
+      s.btn.hidden = !owned;
+      if (!owned) return;
+      any = true;
+      const t = state.skillTimers[def.id];
+      const active = t.active > 0;
+      const ready = t.cooldown <= 0;
+      s.btn.classList.toggle('active', active);
+      s.btn.classList.toggle('ready', ready);
+      s.btn.setAttribute('aria-disabled', String(!ready));
+      s.shade.style.transform = `scaleY(${active || ready ? 0 : t.cooldown / def.cooldown})`;
+      set(s.time, active ? String(Math.ceil(t.active)) : ready ? '' : clock(t.cooldown));
+    });
+    el.skillBar.hidden = !any;
+  }
+
+  const summaryRows =['Dokunuş', 'Kritik', 'Altın', 'Ruh bonusu'].map((label) => {
     const row = make('div', 'sum-cell');
     const value = make('b');
     row.append(make('span', null, label), value);
@@ -225,9 +322,10 @@ export function createUI(h) {
     set(summaryRows[2], `×${L.goldMultiplier(state).toFixed(1)}`);
     set(summaryRows[3], `+${pct(state.souls * SOUL_BONUS)}`);
 
-    tabButtons[0].classList.toggle('badge', heroAfford);
-    tabButtons[1].classList.toggle('badge', partyAfford);
-    tabButtons[2].classList.toggle('badge', L.prestigeSouls(state) > 0);
+    tabButton('hero').classList.toggle('badge', heroAfford);
+    tabButton('party').classList.toggle('badge', partyAfford);
+    tabButton('skills').classList.toggle('badge', updateSkillCards(state, amount));
+    tabButton('rebirth').classList.toggle('badge', L.prestigeSouls(state) > 0);
   }
 
   // ---- Rebirth and menu pages ----
@@ -249,6 +347,7 @@ export function createUI(h) {
     ['Kritik vuruş', (s) => fmt(s.stats.crits)],
     ['Yenilen düşman', (s) => fmt(s.stats.kills)],
     ['Yenilen boss', (s) => fmt(s.stats.bossKills)],
+    ['Kullanılan yetenek', (s) => fmt(s.stats.skillsUsed)],
     ['Toplam altın', (s) => fmt(s.stats.totalGold)],
     ['En yüksek bölüm', (s) => String(s.stats.bestStage)],
     ['Yeniden doğuş', (s) => String(s.stats.prestiges)],
@@ -313,6 +412,7 @@ export function createUI(h) {
     el.auto.hidden = state.autoAdvance;
     set(el.auto, L.isBossStage(state.stage + 1) ? 'Boss\'a meydan oku ▶' : 'İlerlemeye devam ▶');
     el.hint.hidden = state.stats.taps >= 3;
+    updateSkillBar(state);
   }
 
   // ---- Modal and toast ----

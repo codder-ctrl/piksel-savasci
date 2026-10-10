@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as L from '../js/logic.js';
 import {
-  UPGRADES, HELPERS, ZONES, KILLS_PER_STAGE, BOSS_TIME, BOSS_HP_MULT, RESPAWN_DELAY,
-  PRESTIGE_MIN_STAGE, OFFLINE_MIN, OFFLINE_CAP, MAX_CRIT_CHANCE,
+  UPGRADES, HELPERS, SKILLS, ZONES, KILLS_PER_STAGE, BOSS_TIME, BOSS_HP_MULT, RESPAWN_DELAY,
+  PRESTIGE_MIN_STAGE, OFFLINE_MIN, OFFLINE_CAP, MAX_CRIT_CHANCE, MAX_SKILL_CRIT_CHANCE,
 } from '../js/config.js';
 import { SPRITES } from '../js/sprite-data.js';
 
@@ -34,6 +34,7 @@ test('sprites have equal-length rows and every pixel has a color', () => {
 
 test('content tables point at existing sprites', () => {
   for (const u of UPGRADES) assert.ok(SPRITES[u.icon], u.id);
+  for (const k of SKILLS) assert.ok(SPRITES[k.icon], k.id);
   for (const h of HELPERS) assert.ok(SPRITES[h.sprite], h.id);
   for (const z of ZONES) for (const e of z.enemies) assert.ok(SPRITES[e.sprite], e.name);
 });
@@ -223,6 +224,107 @@ test('loadState accepts its own output and repairs bad data', () => {
   assert.equal(bad.stats.kills, 0);
   assert.equal(L.loadState(null).stage, 1);
   assert.equal(L.loadState('junk').gold, 0);
+});
+
+// A state with every skill unlocked and at `level`.
+function withSkills(level = 1) {
+  const s = fresh();
+  s.maxStage = 100;
+  for (const k of SKILLS) s.skills[k.id] = level;
+  return s;
+}
+
+test('skills unlock by stage and are bought with gold', () => {
+  const s = fresh();
+  s.gold = 1e12;
+  const rage = SKILLS.find((k) => k.id === 'rage');
+  s.maxStage = rage.unlockStage - 1;
+  assert.equal(L.skillUnlocked(s, rage), false);
+  assert.equal(L.buy(s, 'skill', 'rage'), false);
+  s.maxStage = rage.unlockStage;
+  assert.equal(L.buy(s, 'skill', 'rage', 'max'), true);
+  assert.equal(s.skills.rage, rage.max);
+  assert.equal(L.useSkill(fresh(), 'rage'), false, 'level 0 cannot be used');
+});
+
+test('Öfke multiplies tap damage until it runs out, then cools down', () => {
+  const s = withSkills(1);
+  const base = L.tapDamage(s);
+  const events = [];
+  assert.equal(L.useSkill(s, 'rage', events), true);
+  assert.deepEqual(events, [{ type: 'skill', id: 'rage' }]);
+  assert.equal(L.tapDamage(s), base * L.skillPower('rage', 1));
+  assert.equal(L.useSkill(s, 'rage'), false, 'on cooldown');
+  const rage = SKILLS.find((k) => k.id === 'rage');
+  L.elapseSkills(s, rage.duration);
+  assert.equal(L.tapDamage(s), base);
+  assert.equal(L.canUseSkill(s, 'rage'), false);
+  L.elapseSkills(s, rage.cooldown - rage.duration);
+  assert.equal(L.canUseSkill(s, 'rage'), true);
+  assert.equal(s.stats.skillsUsed, 1);
+});
+
+test('Savaş Narası boosts total DPS but not the per-companion shop values', () => {
+  const s = withSkills(2);
+  s.helpers.archer = 10;
+  const dps = L.totalDps(s);
+  L.useSkill(s, 'warcry');
+  assert.equal(L.totalDps(s), dps * L.skillPower('warcry', 2));
+  assert.equal(L.helperDps(s, HELPERS[0]), dps);
+});
+
+test('Keskin Bakış adds crit chance up to the skill cap', () => {
+  const s = withSkills(10);
+  const base = L.critChance(s);
+  L.useSkill(s, 'focus');
+  assert.ok(Math.abs(L.critChance(s) - (base + L.skillPower('focus', 10))) < 1e-9);
+  s.upgrades.crit = 1000;
+  assert.ok(L.critChance(s) <= MAX_SKILL_CRIT_CHANCE);
+});
+
+test('Kılıç Fırtınası taps on its own without counting player taps', () => {
+  const s = withSkills(4);
+  s.maxStage = 100;
+  L.setStage(s, 60, noCrit);  // tough enemy so it survives the storm
+  L.useSkill(s, 'storm');
+  const events = L.tick(s, 1, noCrit);
+  const hits = events.filter((e) => e.type === 'hit');
+  assert.equal(hits.length, L.skillPower('storm', 4));
+  assert.ok(hits.every((h) => h.auto));
+  assert.equal(s.stats.taps, 0);
+});
+
+test('Altın Yağmuru pays gold at once', () => {
+  const s = withSkills(1);
+  s.maxStage = 10;
+  L.setStage(s, 10, noCrit);  // boss stage pays as the stage before it
+  const events = [];
+  L.useSkill(s, 'goldRain', events);
+  const expected = Math.ceil(L.enemyGold(s, 9) * L.skillPower('goldRain', 1));
+  assert.equal(events[0].gold, expected);
+  assert.equal(s.gold, expected);
+});
+
+test('skill timers survive saves and rebirth, expire offline, and bad timers are clamped', () => {
+  const s = withSkills(3);
+  L.useSkill(s, 'rage');
+  const round = L.loadState(JSON.parse(JSON.stringify(L.serializeState(s))), noCrit);
+  assert.equal(round.skills.rage, 3);
+  assert.deepEqual(round.skillTimers.rage, s.skillTimers.rage);
+
+  s.helpers.archer = 5;
+  L.applyOffline(s, 3600);
+  assert.deepEqual(s.skillTimers.rage, { active: 0, cooldown: 0 });
+
+  L.useSkill(s, 'rage');
+  L.prestige(s, noCrit);
+  assert.equal(s.skills.rage, 0);
+  assert.ok(s.skillTimers.rage.cooldown > 0);
+
+  const bad = L.loadState({ skills: { rage: 99 }, skillTimers: { rage: { active: 1e9, cooldown: -4 } } }, noCrit);
+  const rage = SKILLS.find((k) => k.id === 'rage');
+  assert.equal(bad.skills.rage, rage.max);
+  assert.deepEqual(bad.skillTimers.rage, { active: rage.duration, cooldown: 0 });
 });
 
 test('formatNumber uses short suffixes', () => {

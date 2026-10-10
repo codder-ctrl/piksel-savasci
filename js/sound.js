@@ -67,5 +67,6 @@ export const sfx = {
   buy: () => { tone(440, 0.05, { vol: 0.03 }); tone(660, 0.08, { delay: 0.05, vol: 0.03 }); },
   boss: () => [220, 185, 147].forEach((f, i) => tone(f, 0.16, { delay: i * 0.13, type: 'sawtooth', vol: 0.025 })),
   fail: () => tone(300, 0.45, { slide: -220, type: 'triangle', vol: 0.06 }),
+  skill: () => [392, 523, 784].forEach((f, i) => tone(f, 0.1, { delay: i * 0.05, type: 'triangle', vol: 0.05, slide: 40 })),
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.09, { delay: i * 0.07, vol: 0.03 })),
 };

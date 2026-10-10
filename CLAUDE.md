@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Piksel Savaşçı: a phone-first pixel-art idle clicker. The top ~48% of the screen is the battle canvas with a DOM HUD over it; the bottom is a tabbed panel (Kahraman, Yoldaşlar, Doğuş, Menü). `index.html`, `styles.css`, native ES modules in `js/`. No build step and no npm dependencies; the only external resource is the Pixelify Sans font from Google Fonts. Keep it that way unless asked. UI text is Turkish.
+Piksel Savaşçı: a phone-first pixel-art idle clicker. The top ~48% of the screen is the battle canvas with a DOM HUD and a skill bar over it; the bottom is a tabbed panel (Kahraman, Yoldaşlar, Yetenekler, Doğuş, Menü). `index.html`, `styles.css`, native ES modules in `js/`. No build step and no npm dependencies; the only external resource is the Pixelify Sans font from Google Fonts. Keep it that way unless asked. UI text is Turkish.
 
 ## Running and testing
 
@@ -23,6 +23,7 @@ Repo: `codder-ctrl/piksel-savasci`. GitHub Pages serves the repo root of `main` 
 
 - **`logic.js`** — all rules, operating on one plain state object. Mutating functions push events (`hit`, `kill`, `unlock`, `stage`, `spawn`, `bossFail`) onto an `events` array; `main.js` passes them to the renderer and sound. Randomness comes in as an `rng` parameter so tests are deterministic.
 - **Stages** — `maxStage` is the highest unlocked stage; `kills` counts progress on it only. With `autoAdvance` on, each kill below `maxStage` moves up one stage. The stage changes right after a kill but the next enemy spawns from it only when `respawn` runs out.
+- **Skills** — levels in `state.skills`, timers in `state.skillTimers[id] = { active, cooldown }` (seconds; the cooldown starts on use and includes the active time). Effects are applied where the numbers are computed: `tapDamage` (rage), `totalDps` (warcry; `helperDps` stays unboosted for the shop), `critChance` (focus), and `tick` runs storm's auto-taps (`hit` events with `auto: true`, kept silent and left out of `stats.taps`). Timers are saved, survive prestige, and run forward offline through `elapseSkills`, so reloading or rebirth can't skip a cooldown.
 - **`render.js`** — draws into a buffer about `TARGET_W` pixels wide, scales it up by a whole number with smoothing off, then draws text at full resolution. It keeps its own snapshot of the on-screen enemy (`current`) and only re-syncs on `spawn`, or on `stage` when the enemy is already alive. The dying enemy and the background therefore stay correct while `state.stage` has already advanced.
 - **`ui.js`** — builds the shop cards once and updates their text a few times a second through `set()`, which only writes changed text. It never mutates state; every action goes through the handler object from `main.js`.
 - **`main.js`** — loop (dt capped at 0.1s), input, autosave every 10s plus on hide/pagehide. On return, gaps under `OFFLINE_MIN` are simulated with `tick`; longer gaps pay `offlineGold` and show the welcome modal.

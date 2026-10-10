@@ -27,6 +27,12 @@ npm test
 - Every 10 stages the **zone** changes: Yeşil Çayır, Karanlık Orman, Kristal Mağara, Kızıl Çöl, Buz Diyarı, Volkan (then the cycle repeats).
 - **Kahraman** tab: tap damage, crit chance, crit damage, gold bonus, and "Savaş Ruhu" (adds part of the companions' damage to each tap).
 - **Yoldaşlar** tab: 12 companions that attack on their own (damage per second). Each one unlocks after you hire the one before it. Sword and companion damage doubles every 25 levels.
+- **Yetenekler** tab: five active skills that unlock as you reach stages 5, 12, 20, 30 and 40 and level up with gold (max 10). Use them from the skill bar on the battle ground, or with keys 1–5 on a keyboard. Each one then cools down; cooldowns keep running while the game is closed.
+  - *Öfke:* tap damage ×2–6.5 for 30 s (5 min cooldown)
+  - *Savaş Narası:* companion damage ×2–6.5 for 30 s (5 min)
+  - *Kılıç Fırtınası:* 7–16 automatic hits per second for 20 s (10 min)
+  - *Keskin Bakış:* +23–50% crit chance for 30 s (8 min)
+  - *Altın Yağmuru:* instant gold worth 20–65 enemies (15 min)
 - **Doğuş** tab: from stage 20 on, start over for **Ruh Taşı** (soul stones). Each stone adds a permanent +10% to all damage.
 - **Menü** tab: stats, sound, save code export/import, full reset.
 - Buttons buy ×1 / ×10 / ×100 / MAKS levels at a time. Holding a buy button keeps buying.

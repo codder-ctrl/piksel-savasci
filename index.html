@@ -44,10 +44,11 @@
           <div class="bar hp-bar"><div id="hp-fill" class="fill"></div><span id="hp-text"></span></div>
           <div id="timer-bar" class="bar timer-bar" hidden><div id="timer-fill" class="fill"></div><span id="timer-text"></span></div>
         </div>
+        <button id="auto-btn" class="pixel-btn accent" type="button" hidden></button>
       </div>
 
+      <div id="skill-bar" role="toolbar" aria-label="Yetenekler"></div>
       <div id="tap-hint" hidden>DOKUN!</div>
-      <button id="auto-btn" class="pixel-btn accent" type="button" hidden></button>
     </section>
 
     <section id="panel">
@@ -69,6 +70,11 @@
 
         <div class="page" data-tab="party" hidden>
           <div id="helper-list" class="list"></div>
+        </div>
+
+        <div class="page" data-tab="skills" hidden>
+          <p class="page-hint">Yetenekleri savaş alanındaki düğmelerle kullan. Kullandıktan sonra bir süre beklemeleri gerekir.</p>
+          <div id="skill-list" class="list"></div>
         </div>
 
         <div class="page" data-tab="rebirth" hidden>
@@ -109,6 +115,7 @@
       <nav id="tabs" role="tablist">
         <button class="tab active" type="button" role="tab" data-tab="hero" aria-selected="true"><img data-icon="hero" alt=""><span>Kahraman</span></button>
         <button class="tab" type="button" role="tab" data-tab="party" aria-selected="false"><img data-icon="hood" alt=""><span>Yoldaşlar</span></button>
+        <button class="tab" type="button" role="tab" data-tab="skills" aria-selected="false"><img data-icon="skStorm" alt=""><span>Yetenekler</span></button>
         <button class="tab" type="button" role="tab" data-tab="rebirth" aria-selected="false"><img data-icon="soul" alt=""><span>Doğuş</span></button>
         <button class="tab" type="button" role="tab" data-tab="menu" aria-selected="false"><img data-icon="menu" alt=""><span>Menü</span></button>
       </nav>

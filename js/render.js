@@ -326,12 +326,32 @@ export function createRenderer(canvas) {
     }
   }
 
+  // Ongoing skill effects: embers off the hero (Öfke), sparkles over the companions
+  // (Savaş Narası) and blue glints around the enemy (Keskin Bakış).
+  function skillAuras(state, dt, box) {
+    const t = state.skillTimers;
+    const emit = (rate) => Math.random() < rate * dt;
+    if (t.rage.active > 0 && emit(30)) {
+      particles.push({ x: heroX() + 4 + Math.random() * 9, y: heroY() + 4 + Math.random() * 11, vx: Math.random() * 8 - 4, vy: -18 - Math.random() * 12, g: -10, life: 0.5, c: Math.random() < 0.5 ? '#ef7d57' : '#b13e53', size: 1 });
+    }
+    if (t.warcry.active > 0) {
+      ownedHelpers(state).forEach((_, slot) => {
+        if (!emit(4)) return;
+        const p = helperPos(slot);
+        particles.push({ x: p.x + Math.random() * 10, y: p.y - 1, vx: 0, vy: -14, g: 0, life: 0.45, c: '#ffcd75', size: 1 });
+      });
+    }
+    if (t.focus.active > 0 && box && emit(10)) {
+      particles.push({ x: box.x + Math.random() * box.w, y: box.y + Math.random() * box.h, vx: 0, vy: -6, g: 0, life: 0.3, c: '#73eff7', size: 1 });
+    }
+  }
+
   function updateParticles(dt) {
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.life -= dt;
       if (p.life <= 0) { particles.splice(i, 1); continue; }
-      p.vy += 160 * dt;
+      p.vy += (p.g ?? 160) * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.y > groundY) { p.y = groundY; p.vy *= -0.3; p.vx *= 0.6; }
@@ -492,6 +512,10 @@ export function createRenderer(canvas) {
         numbers.push({ text: '+' + formatNumber(ev.gold), x: box.cx, y: box.y - 2, vy: 8, t: 0, life: 1.1, size: 4.5, color: '#ffcd75' });
         if (ev.boss && !reduceMotion) fx.shake = 0.3;
       }
+    } else if (ev.type === 'skill' && ev.id === 'goldRain') {
+      for (let i = 0; i < 28; i++) {
+        coins.push({ x: 4 + Math.random() * (W - 8), y: -4 - Math.random() * 30, vx: Math.random() * 10 - 5, vy: Math.random() * 20, t: 0, drop: 1 + Math.random() * 0.5, p: Math.random() * 4 });
+      }
     } else if (ev.type === 'spawn' || (ev.type === 'stage' && state.enemy.respawn <= 0)) {
       sync(state);
     }
@@ -528,6 +552,7 @@ export function createRenderer(canvas) {
       b.drawImage(sl.canvas, box.x - 4, fx.slashY, sl.w * box.sc, sl.h * box.sc);
     }
     updateShots(dt);
+    skillAuras(state, dt, box);
     updateParticles(dt);
     drawRipples(dt);
     updateCoins(dt);

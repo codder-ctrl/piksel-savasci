@@ -3,7 +3,7 @@ import {
   HP_BASE, HP_GROWTH, GOLD_PER_HP, RESPAWN_DELAY, BASE_CRIT_CHANCE, CRIT_CHANCE_STEP,
   MAX_CRIT_CHANCE, BASE_CRIT_MULT, CRIT_MULT_STEP, GREED_STEP, SPIRIT_STEP, MILESTONE_EVERY,
   MILESTONE_MULT, PRESTIGE_MIN_STAGE, SOUL_BONUS, OFFLINE_MIN, OFFLINE_CAP, OFFLINE_RATE,
-  BUY_AMOUNTS, UPGRADES, HELPERS, ZONES,
+  BUY_AMOUNTS, UPGRADES, HELPERS, SKILLS, ZONES, MAX_SKILL_CRIT_CHANCE,
 } from './config.js';
 
 // Pure game rules: no DOM, no timers. Functions that change the game take the state object,
@@ -23,7 +23,10 @@ export function newGame(rng = Math.random, now = Date.now()) {
     autoAdvance: true,
     upgrades: Object.fromEntries(UPGRADES.map((u) => [u.id, 0])),
     helpers: Object.fromEntries(HELPERS.map((h) => [h.id, 0])),
-    stats: { taps: 0, crits: 0, kills: 0, bossKills: 0, totalGold: 0, prestiges: 0, playTime: 0, bestStage: 1 },
+    skills: Object.fromEntries(SKILLS.map((s) => [s.id, 0])),
+    skillTimers: Object.fromEntries(SKILLS.map((s) => [s.id, { active: 0, cooldown: 0 }])),
+    stormAcc: 0,       // fractional auto-taps carried between ticks
+    stats: { taps: 0, crits: 0, kills: 0, bossKills: 0, skillsUsed: 0, totalGold: 0, prestiges: 0, playTime: 0, bestStage: 1 },
     settings: { sound: true, buyAmount: 1 },
     enemy: null,
     lastSeen: now,
@@ -75,9 +78,14 @@ export function setStage(state, stage, rng = Math.random, events = []) {
 export const milestoneMultiplier = (level) => MILESTONE_MULT ** Math.floor(level / MILESTONE_EVERY);
 export const soulMultiplier = (state) => 1 + state.souls * SOUL_BONUS;
 export const goldMultiplier = (state) => 1 + state.upgrades.greed * GREED_STEP;
-export const critChance = (state) => Math.min(MAX_CRIT_CHANCE, BASE_CRIT_CHANCE + state.upgrades.crit * CRIT_CHANCE_STEP);
 export const critMultiplier = (state) => BASE_CRIT_MULT + state.upgrades.critDmg * CRIT_MULT_STEP;
 
+export function critChance(state) {
+  const base = Math.min(MAX_CRIT_CHANCE, BASE_CRIT_CHANCE + state.upgrades.crit * CRIT_CHANCE_STEP);
+  return Math.min(MAX_SKILL_CRIT_CHANCE, base + activeSkillPower(state, 'focus', 0));
+}
+
+// One companion's damage per second, without Savaş Narası (the shop shows base values).
 export function helperDps(state, def, level = state.helpers[def.id]) {
   return level > 0 ? def.baseDps * level * milestoneMultiplier(level) * soulMultiplier(state) : 0;
 }
@@ -85,7 +93,7 @@ export function helperDps(state, def, level = state.helpers[def.id]) {
 export function totalDps(state) {
   let sum = 0;
   for (const h of HELPERS) sum += helperDps(state, h);
-  return sum;
+  return sum * activeSkillPower(state, 'warcry', 1);
 }
 
 export function swordDamage(state, level = state.upgrades.sword) {
@@ -93,7 +101,76 @@ export function swordDamage(state, level = state.upgrades.sword) {
 }
 
 export function tapDamage(state, spirit = state.upgrades.spirit) {
-  return swordDamage(state) + totalDps(state) * spirit * SPIRIT_STEP;
+  return (swordDamage(state) + totalDps(state) * spirit * SPIRIT_STEP) * activeSkillPower(state, 'rage', 1);
+}
+
+// ---- Active skills ----
+
+export const findSkill = (id) => SKILLS.find((s) => s.id === id);
+
+// Effect strength at a level: a multiplier for rage/warcry, taps per second for storm, added
+// crit chance for focus, and enemies' worth of gold for goldRain.
+export function skillPower(id, level) {
+  if (level <= 0) return 0;
+  switch (id) {
+    case 'rage':
+    case 'warcry': return 1.5 + 0.5 * level;
+    case 'storm': return 6 + level;
+    case 'focus': return 0.2 + 0.03 * level;
+    case 'goldRain': return 15 + 5 * level;
+    default: return 0;
+  }
+}
+
+export const isSkillActive = (state, id) => state.skillTimers[id].active > 0;
+
+function activeSkillPower(state, id, fallback) {
+  return isSkillActive(state, id) ? skillPower(id, state.skills[id]) : fallback;
+}
+
+export function skillUnlocked(state, def) {
+  return state.maxStage >= def.unlockStage || state.skills[def.id] > 0;
+}
+
+export function canUseSkill(state, id) {
+  return state.skills[id] > 0 && state.skillTimers[id].cooldown <= 0;
+}
+
+export function useSkill(state, id, events = []) {
+  const def = findSkill(id);
+  if (!def || !canUseSkill(state, id)) return false;
+  const t = state.skillTimers[id];
+  t.active = def.duration;
+  t.cooldown = def.cooldown;
+  state.stats.skillsUsed++;
+  const ev = { type: 'skill', id };
+  if (id === 'goldRain') {
+    const stage = isBossStage(state.stage) ? state.stage - 1 : state.stage;
+    ev.gold = Math.ceil(enemyGold(state, stage) * skillPower(id, state.skills[id]));
+    addGold(state, ev.gold);
+  }
+  events.push(ev);
+  return true;
+}
+
+// Runs skill timers forward without combat (time spent away).
+export function elapseSkills(state, seconds) {
+  for (const s of SKILLS) {
+    const t = state.skillTimers[s.id];
+    t.active = Math.max(0, t.active - seconds);
+    t.cooldown = Math.max(0, t.cooldown - seconds);
+  }
+}
+
+function updateSkills(state, dt, rng, events) {
+  const stormOn = isSkillActive(state, 'storm');
+  elapseSkills(state, dt);
+  if (!stormOn) { state.stormAcc = 0; return; }
+  state.stormAcc += skillPower('storm', state.skills.storm) * dt;
+  while (state.stormAcc >= 1) {
+    state.stormAcc--;
+    tap(state, rng, events, true);
+  }
 }
 
 function addGold(state, amount) {
@@ -133,22 +210,24 @@ function damageEnemy(state, dmg, events) {
   if (e.hp <= 0) killEnemy(state, events);
 }
 
-// A player tap. Returns the hit event, or null while the next enemy is still on its way.
-export function tap(state, rng = Math.random, events = []) {
+// A tap (player's, or `auto` from Kılıç Fırtınası). Returns the hit event, or null while the
+// next enemy is still on its way.
+export function tap(state, rng = Math.random, events = [], auto = false) {
   if (state.enemy.respawn > 0) return null;
-  state.stats.taps++;
+  if (!auto) state.stats.taps++;
   const crit = rng() < critChance(state);
   const dmg = tapDamage(state) * (crit ? critMultiplier(state) : 1);
   if (crit) state.stats.crits++;
-  const hit = { type: 'hit', dmg, crit };
+  const hit = { type: 'hit', dmg, crit, auto };
   events.push(hit);
   damageEnemy(state, dmg, events);
   return hit;
 }
 
-// Advances time: respawn delay, helper damage and the boss timer.
+// Advances time: skills, respawn delay, helper damage and the boss timer.
 export function tick(state, dt, rng = Math.random, events = []) {
   state.stats.playTime += dt;
+  updateSkills(state, dt, rng, events);
   const e = state.enemy;
   if (e.respawn > 0) {
     e.respawn -= dt;
@@ -174,8 +253,10 @@ export function tick(state, dt, rng = Math.random, events = []) {
 
 // ---- Shop ----
 
-export const findDef = (kind, id) => (kind === 'helper' ? HELPERS : UPGRADES).find((d) => d.id === id);
-const levelsOf = (state, kind) => (kind === 'helper' ? state.helpers : state.upgrades);
+const TABLES = { upgrade: UPGRADES, helper: HELPERS, skill: SKILLS };
+const LEVEL_KEYS = { upgrade: 'upgrades', helper: 'helpers', skill: 'skills' };
+export const findDef = (kind, id) => TABLES[kind]?.find((d) => d.id === id);
+const levelsOf = (state, kind) => state[LEVEL_KEYS[kind]];
 
 // Total cost of the next `n` levels starting from `level` (geometric series).
 export function costFor(def, level, n = 1) {
@@ -209,6 +290,7 @@ export function purchasePlan(def, level, gold, amount) {
 export function buy(state, kind, id, amount = 1) {
   const def = findDef(kind, id);
   if (!def) return false;
+  if (kind === 'skill' && !skillUnlocked(state, def)) return false;
   const levels = levelsOf(state, kind);
   const { n, cost } = purchasePlan(def, levels[id], state.gold, amount);
   if (n <= 0 || cost > state.gold) return false;
@@ -224,7 +306,8 @@ export function prestigeSouls(state) {
   return Math.floor((state.maxStage - 15) ** 1.5 / 5);
 }
 
-// Resets the run for souls. Keeps souls, stats and settings. Returns the souls gained.
+// Resets the run for souls. Keeps souls, stats, settings and skill timers (so rebirth can't
+// skip a cooldown); skill levels reset like other upgrades. Returns the souls gained.
 export function prestige(state, rng = Math.random) {
   const gain = prestigeSouls(state);
   if (gain <= 0) return 0;
@@ -232,6 +315,7 @@ export function prestige(state, rng = Math.random) {
   fresh.souls = state.souls + gain;
   fresh.stats = { ...state.stats, prestiges: state.stats.prestiges + 1 };
   fresh.settings = state.settings;
+  fresh.skillTimers = state.skillTimers;
   Object.assign(state, fresh);
   return gain;
 }
@@ -250,7 +334,10 @@ export function offlineGold(state, seconds) {
   return Math.floor((sec / secondsPerKill) * enemyGold(state, stage) * OFFLINE_RATE);
 }
 
+// Pays offline gold and runs skill timers forward. Effects expire first, so an active
+// Savaş Narası doesn't boost the whole absence.
 export function applyOffline(state, seconds) {
+  elapseSkills(state, seconds);
   const gold = offlineGold(state, seconds);
   if (gold > 0) addGold(state, gold);
   return gold;
@@ -278,6 +365,14 @@ export function loadState(raw, rng = Math.random, now = Date.now()) {
   s.autoAdvance = raw.autoAdvance !== false;
   for (const u of UPGRADES) s.upgrades[u.id] = Math.min(u.max, int(raw.upgrades?.[u.id], 0));
   for (const h of HELPERS) s.helpers[h.id] = int(raw.helpers?.[h.id], 0);
+  for (const k of SKILLS) {
+    s.skills[k.id] = Math.min(k.max, int(raw.skills?.[k.id], 0));
+    const t = raw.skillTimers?.[k.id];
+    s.skillTimers[k.id] = {
+      active: Math.min(k.duration, num(t?.active, 0)),
+      cooldown: Math.min(k.cooldown, num(t?.cooldown, 0)),
+    };
+  }
   for (const k of Object.keys(s.stats)) s.stats[k] = num(raw.stats?.[k], s.stats[k]);
   if (typeof raw.settings?.sound === 'boolean') s.settings.sound = raw.settings.sound;
   if (BUY_AMOUNTS.includes(raw.settings?.buyAmount)) s.settings.buyAmount = raw.settings.buyAmount;

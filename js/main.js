@@ -1,4 +1,4 @@
-import { AUTOSAVE_MS, OFFLINE_MIN, OFFLINE_CAP } from './config.js';
+import { AUTOSAVE_MS, OFFLINE_MIN, OFFLINE_CAP, SKILLS } from './config.js';
 import * as L from './logic.js';
 import * as store from './store.js';
 import { createRenderer } from './render.js';
@@ -20,8 +20,15 @@ function dispatch(events) {
     renderer.handle(ev, state);
     switch (ev.type) {
       case 'hit':
-        (ev.crit ? sfx.crit : sfx.hit)();
+        // Kılıç Fırtınası hits many times a second; keep those silent.
+        if (!ev.auto) (ev.crit ? sfx.crit : sfx.hit)();
         break;
+      case 'skill': {
+        const def = L.findSkill(ev.id);
+        sfx.skill();
+        renderer.showBanner(def.name.toLocaleUpperCase('tr-TR') + '!', def.color, 1.4);
+        break;
+      }
       case 'kill':
         sfx.kill();
         if (ev.boss) { sfx.win(); renderer.showBanner('BOSS YENİLDİ!', '#ffcd75'); }
@@ -39,6 +46,12 @@ function dispatch(events) {
         break;
     }
   }
+}
+
+function activateSkill(id) {
+  unlockAudio();
+  const events = [];
+  if (L.useSkill(state, id, events)) dispatch(events);
 }
 
 function replaceState(next) {
@@ -67,6 +80,7 @@ const ui = createUI({
       dispatch(events);
     }
   },
+  useSkill: activateSkill,
   resumeAuto() {
     state.autoAdvance = true;
   },
@@ -228,6 +242,9 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.key === 'Enter') {
     e.preventDefault();
     doTap(null, null);
+  } else if (/^Digit[1-9]$/.test(e.code)) {
+    const def = SKILLS[Number(e.code.slice(5)) - 1];
+    if (def) activateSkill(def.id);
   }
 });
 
