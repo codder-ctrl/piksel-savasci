@@ -3,6 +3,8 @@ import * as L from './logic.js';
 import * as store from './store.js';
 import { createRenderer } from './render.js';
 import { createUI } from './ui.js';
+import { createDungeonView } from './dungeon-view.js';
+import * as D from './dungeon.js';
 import { sfx, unlockAudio, setSoundEnabled } from './sound.js';
 
 // Wires everything together: the game loop, input, saving and the UI handlers.
@@ -14,9 +16,17 @@ let state = L.loadState(store.loadRaw());
 setSoundEnabled(state.settings.sound);
 
 const renderer = createRenderer(canvas);
+const dungeonCanvas = document.getElementById('dungeon-canvas');
+const dungeonView = createDungeonView(dungeonCanvas);
 
 function dispatch(events) {
   for (const ev of events) {
+    if (ev.type.startsWith('dg-')) {
+      // The dungeon is only drawn while its tab is open.
+      if (ui.tab === 'dungeon') dungeonView.handle(ev, state);
+      if (ev.type === 'dg-clear' && ev.elmas) ui.toast(`Zindan bossu: +${ev.elmas} elmas`);
+      continue;
+    }
     renderer.handle(ev, state);
     switch (ev.type) {
       case 'hit':
@@ -32,6 +42,9 @@ function dispatch(events) {
       case 'kill':
         sfx.kill();
         if (ev.boss) { sfx.win(); renderer.showBanner('BOSS YENİLDİ!', '#ffcd75'); }
+        break;
+      case 'elmas':
+        ui.toast(`İlk boss zaferi: +${ev.amount} elmas`);
         break;
       case 'bossFail':
         sfx.fail();
@@ -81,6 +94,31 @@ const ui = createUI({
     }
   },
   useSkill: activateSkill,
+  openEgg() {
+    const result = L.openEgg(state);
+    if (!result) return;
+    sfx.win();
+    ui.refresh();
+    ui.showEgg(result, state);
+  },
+  evolvePet() {
+    if (L.evolvePet(state, state.activePet)) {
+      sfx.win();
+      ui.refresh();
+      const pet = L.findPet(state.activePet);
+      renderer.showBanner(pet.forms[state.pets[pet.id].form - 1].name.toLocaleUpperCase('tr-TR') + '!', '#a7f070', 1.8);
+    }
+  },
+  selectPet(id) {
+    if (L.selectPet(state, id)) { sfx.buy(); ui.refresh(); }
+  },
+  companion(id) {
+    const ok = state.companions[id] > 0 ? D.levelUpCompanion(state, id) : D.recruit(state, id);
+    if (ok) { sfx.buy(); ui.refresh(); }
+  },
+  toggleTeam(id) {
+    if (D.toggleTeam(state, id)) ui.refresh();
+  },
   resumeAuto() {
     state.autoAdvance = true;
   },
@@ -91,7 +129,7 @@ const ui = createUI({
       title: 'Yeniden Doğuş',
       body: [
         `${L.formatNumber(gain)} Ruh Taşı kazanacaksın. Her biri tüm hasarını kalıcı olarak %10 artırır.`,
-        'Altın, güçlendirmeler, yoldaşlar ve bölüm sıfırlanır.',
+        'Altın, güçlendirmeler, yetenekler, pet eğitimi ve bölüm sıfırlanır. Petler, elmas, kristal ve zindan kalır.',
       ],
       actions: [
         { label: 'Vazgeç' },
@@ -193,7 +231,7 @@ function catchUp(seconds) {
     if (gold > 0) {
       ui.openModal({
         title: 'Tekrar hoş geldin!',
-        body: `Sen yokken (${L.formatDuration(Math.min(seconds, OFFLINE_CAP))}) yoldaşların ${L.formatNumber(gold)} altın topladı.`,
+        body: `Sen yokken (${L.formatDuration(Math.min(seconds, OFFLINE_CAP))}) petin ${L.formatNumber(gold)} altın topladı.`,
         actions: [{ label: 'Harika!', kind: 'accent' }],
       });
     }
@@ -263,6 +301,7 @@ function layout() {
   renderer.setCoinTarget(i.left + i.width / 2 - c.left, i.top + i.height / 2 - c.top);
 }
 new ResizeObserver(layout).observe(canvas);
+new ResizeObserver(() => dungeonView.resize()).observe(dungeonCanvas);
 layout();
 // Text on the canvas uses the pixel font; redraw sizes once it has loaded.
 document.fonts?.ready.then(layout);
@@ -287,6 +326,7 @@ function loop(now) {
   last = now;
   dispatch(L.tick(state, dt, Math.random, []));
   renderer.frame(state, dt);
+  if (ui.tab === 'dungeon') dungeonView.frame(state, dt);
   ui.update(state, now);
   requestAnimationFrame(loop);
 }

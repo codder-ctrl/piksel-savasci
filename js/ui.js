@@ -1,9 +1,12 @@
 import {
-  UPGRADES, HELPERS, SKILLS, ZONES, KILLS_PER_STAGE, BOSS_TIME, PRESTIGE_MIN_STAGE, SOUL_BONUS,
+  UPGRADES, SKILLS, ZONES, KILLS_PER_STAGE, BOSS_TIME, PRESTIGE_MIN_STAGE, SOUL_BONUS,
   MILESTONE_EVERY, SPIRIT_STEP,
 } from './config.js';
 import * as L from './logic.js';
 import { spriteUrl } from './sprites.js';
+import { CHANGELOG, VERSION } from './changelog.js';
+import { createPetPage } from './ui-pets.js';
+import { createDungeonPage } from './ui-dungeon.js';
 
 // DOM side of the game: HUD over the battle, the tabbed panel below it and modals.
 // It never changes game state itself; every action goes through the handlers from main.js.
@@ -74,7 +77,7 @@ const nextMilestone = (level) => (Math.floor(level / MILESTONE_EVERY) + 1) * MIL
 // Label and value format of each skill's power (see logic.skillPower).
 const SKILL_TEXT = {
   rage: ['Dokunuş', (p) => '×' + fmt(p)],
-  warcry: ['Yoldaş hasarı', (p) => '×' + fmt(p)],
+  warcry: ['Pet hasarı', (p) => '×' + fmt(p)],
   storm: ['Otomatik vuruş', (p) => `${fmt(p)}/sn`],
   focus: ['Kritik şansı', (p) => '+' + pct(p)],
   goldRain: ['Anında altın', (p) => `${fmt(p)} düşman`],
@@ -104,7 +107,7 @@ export function createUI(h) {
     enemyName: $('enemy-name'), progress: $('enemy-progress'), hpFill: $('hp-fill'), hpText: $('hp-text'),
     timerBar: $('timer-bar'), timerFill: $('timer-fill'), timerText: $('timer-text'),
     auto: $('auto-btn'), hint: $('tap-hint'), buyBar: $('buy-bar'), skillBar: $('skill-bar'), skillList: $('skill-list'),
-    summary: $('hero-summary'), upgradeList: $('upgrade-list'), helperList: $('helper-list'),
+    summary: $('hero-summary'), upgradeList: $('upgrade-list'), version: $('version-btn'),
     rbSouls: $('rb-souls'), rbBonus: $('rb-bonus'), rbStage: $('rb-stage'), rbGain: $('rb-gain'), rbBtn: $('rb-btn'), rbNote: $('rb-note'),
     stats: $('stats'), soundBtn: $('sound-btn'), toast: $('toast'),
     modal: $('modal'), modalTitle: $('modal-title'), modalBody: $('modal-body'), modalActions: $('modal-actions'),
@@ -113,6 +116,7 @@ export function createUI(h) {
   // ---- Tabs ----
 
   let tab = 'hero';
+  let lastPanel = 0;
   const tabButtons = [...document.querySelectorAll('#tabs .tab')];
   const tabButton = (name) => tabButtons.find((b) => b.dataset.tab === name);
   const pages = [...document.querySelectorAll('#pages .page')];
@@ -123,7 +127,8 @@ export function createUI(h) {
       b.setAttribute('aria-selected', String(b.dataset.tab === name));
     }
     for (const p of pages) p.hidden = p.dataset.tab !== name;
-    el.buyBar.hidden = !['hero', 'party', 'skills'].includes(name);
+    el.buyBar.hidden = !['hero', 'pet', 'skills'].includes(name);
+    lastPanel = 0;
     $('pages').scrollTop = 0;
   }
   tabButtons.forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -136,7 +141,7 @@ export function createUI(h) {
 
   // ---- Shop cards ----
 
-  function makeCard(iconUrl, onBuy) {
+  function makeCard(iconUrl, onBuy, currency = 'coinIcon') {
     const card = make('div', 'card item');
     const img = make('img', 'item-icon');
     img.alt = '';
@@ -155,7 +160,7 @@ export function createUI(h) {
     const costRow = make('span', 'buy-cost');
     const coin = make('img');
     coin.alt = '';
-    coin.src = icon('coinIcon');
+    coin.src = icon(currency);
     const cost = make('span');
     costRow.append(coin, cost);
     btn.append(label, costRow);
@@ -171,11 +176,9 @@ export function createUI(h) {
     return c;
   });
 
-  const helperCards = HELPERS.map((def) => {
-    const c = makeCard(icon(def.sprite, def.colors), () => h.buy('helper', def.id));
-    el.helperList.append(c.card);
-    return c;
-  });
+  const pageTools = { h, icon, make, set, makeCard, fmt };
+  const petPage = createPetPage(pageTools);
+  const dungeonPage = createDungeonPage(pageTools);
 
   const skillCards = SKILLS.map((def) => {
     const c = makeCard(icon(def.icon), () => h.buy('skill', def.id));
@@ -281,49 +284,14 @@ export function createUI(h) {
       if (!maxed && L.costFor(def, level) <= state.gold) heroAfford = true;
     });
 
-    let partyAfford = false;
-    let teaserShown = false;
-    HELPERS.forEach((def, i) => {
-      const c = helperCards[i];
-      const level = state.helpers[def.id];
-      const visible = i === 0 || level > 0 || state.helpers[HELPERS[i - 1].id] > 0;
-      const teaser = !visible && !teaserShown;
-      if (teaser) teaserShown = true;
-      c.card.hidden = !visible && !teaser;
-      c.card.classList.toggle('locked', teaser);
-      if (c.card.hidden) return;
-      if (teaser) {
-        c.img.src = icon('lock');
-        set(c.name, '???');
-        set(c.lvl, '');
-        set(c.desc, 'Önceki yoldaşı kirala');
-        set(c.note, '');
-        set(c.label, 'Kilitli');
-        set(c.cost, fmt(def.baseCost));
-        c.btn.disabled = true;
-        return;
-      }
-      c.img.src = icon(def.sprite, def.colors);
-      const plan = L.purchasePlan(def, level, state.gold, amount);
-      set(c.name, def.name);
-      set(c.lvl, `Sv. ${level}`);
-      const a = fmt(L.helperDps(state, def, level));
-      const b = fmt(L.helperDps(state, def, level + plan.n));
-      set(c.desc, `Hasar/sn: ${a} → ${b}`);
-      set(c.note, level > 0 ? `Sonraki ×2: Sv. ${nextMilestone(level)}` : 'Otomatik saldırır');
-      set(c.label, level === 0 && plan.n === 1 ? 'Kirala' : `+${plan.n}`);
-      set(c.cost, fmt(plan.cost));
-      c.btn.disabled = plan.cost > state.gold;
-      if (L.costFor(def, level) <= state.gold) partyAfford = true;
-    });
-
     set(summaryRows[0], fmt(L.tapDamage(state)));
     set(summaryRows[1], `${pct(L.critChance(state))} ×${L.critMultiplier(state)}`);
     set(summaryRows[2], `×${L.goldMultiplier(state).toFixed(1)}`);
     set(summaryRows[3], `+${pct(state.souls * SOUL_BONUS)}`);
 
     tabButton('hero').classList.toggle('badge', heroAfford);
-    tabButton('party').classList.toggle('badge', partyAfford);
+    tabButton('pet').classList.toggle('badge', petPage.update(state, amount));
+    tabButton('dungeon').classList.toggle('badge', dungeonPage.update(state));
     tabButton('skills').classList.toggle('badge', updateSkillCards(state, amount));
     tabButton('rebirth').classList.toggle('badge', L.prestigeSouls(state) > 0);
   }
@@ -338,7 +306,7 @@ export function createUI(h) {
     set(el.rbGain, gain > 0 ? `+${fmt(gain)}` : '0');
     el.rbBtn.disabled = gain <= 0;
     set(el.rbNote, gain > 0
-      ? 'Altın, güçlendirmeler, yoldaşlar ve bölüm sıfırlanır. Ruh taşları kalır.'
+      ? 'Altın, güçlendirmeler, yetenekler, pet eğitimi ve bölüm sıfırlanır. Ruh taşları, petler, elmas, kristal ve zindan kalır.'
       : `${PRESTIGE_MIN_STAGE}. bölüme ulaşınca açılır.`);
   }
 
@@ -348,6 +316,8 @@ export function createUI(h) {
     ['Yenilen düşman', (s) => fmt(s.stats.kills)],
     ['Yenilen boss', (s) => fmt(s.stats.bossKills)],
     ['Kullanılan yetenek', (s) => fmt(s.stats.skillsUsed)],
+    ['Açılan yumurta', (s) => fmt(s.stats.eggs)],
+    ['Zindanda en iyi kat', (s) => String(s.dungeon.best)],
     ['Toplam altın', (s) => fmt(s.stats.totalGold)],
     ['En yüksek bölüm', (s) => String(s.stats.bestStage)],
     ['Yeniden doğuş', (s) => String(s.stats.prestiges)],
@@ -435,6 +405,20 @@ export function createUI(h) {
   }
 
   el.modal.addEventListener('click', (e) => { if (e.target === el.modal) closeModal(); });
+
+  // Version label in the top-right corner; opens the release notes.
+  set(el.version, `v${VERSION}`);
+  el.version.addEventListener('click', () => {
+    const list = make('div', 'changelog');
+    for (const entry of CHANGELOG) {
+      const head = make('h3', null, `v${entry.version}`);
+      head.append(make('span', null, entry.date));
+      const ul = make('ul');
+      for (const note of entry.notes) ul.append(make('li', null, note));
+      list.append(head, ul);
+    }
+    openModal({ title: 'Sürüm Notları', body: list, actions: [{ label: 'Kapat' }] });
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !el.modal.hidden) closeModal(); });
 
   let toastTimer = null;
@@ -454,7 +438,6 @@ export function createUI(h) {
     el.goldPill.classList.add('pulse');
   }
 
-  let lastPanel = 0;
   return {
     update(state, now) {
       updateHud(state);
@@ -467,6 +450,8 @@ export function createUI(h) {
       }
     },
     refresh() { lastPanel = 0; },
+    get tab() { return tab; },
+    showEgg(result, state) { openModal(petPage.eggResult(result, state)); },
     setTab,
     openModal,
     closeModal,

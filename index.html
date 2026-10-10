@@ -22,6 +22,7 @@
   <div id="app">
     <section id="battle" aria-label="Savaş alanı">
       <canvas id="scene"></canvas>
+      <button id="version-btn" class="version" type="button" aria-label="Sürüm notları"></button>
 
       <div id="hud">
         <div class="hud-top">
@@ -68,8 +69,38 @@
           <div id="upgrade-list" class="list"></div>
         </div>
 
-        <div class="page" data-tab="party" hidden>
-          <div id="helper-list" class="list"></div>
+        <div class="page" data-tab="pet" hidden>
+          <div class="card pet-show">
+            <img id="pet-img" class="pet-img" alt="">
+            <div class="pet-info">
+              <div class="pet-tags"><span id="pet-rarity" class="rarity"></span><span id="pet-stars" class="stars"></span></div>
+              <b id="pet-name" class="pet-name"></b>
+              <div id="pet-mult" class="item-desc"></div>
+              <div id="pet-form" class="item-note"></div>
+            </div>
+            <button id="pet-evolve" class="buy-btn crystal" type="button"><span id="pet-evolve-label" class="buy-label"></span><span class="buy-cost"><img data-icon="crystal" alt=""><span id="pet-evolve-cost"></span></span></button>
+          </div>
+          <div id="pet-training" class="list"></div>
+          <div class="card info egg">
+            <div class="wallet"><span><img data-icon="gem" alt=""><b id="elmas">0</b> elmas</span><span><img data-icon="crystal" alt=""><b id="pet-kristal">0</b> kristal</span></div>
+            <button id="egg-btn" class="pixel-btn big gem" type="button"></button>
+            <p id="egg-rates" class="note"></p>
+            <p class="note">Elmas: ana savaşta ve zindanda her yeni boss ilk kez yenildiğinde kazanılır. Aynı pet tekrar çıkarsa yıldız kazanır.</p>
+          </div>
+          <h3 class="section-title">Koleksiyon <span id="pet-count"></span></h3>
+          <div id="pet-grid" class="pet-grid"></div>
+        </div>
+
+        <div class="page" data-tab="dungeon" hidden>
+          <div class="dg-head">
+            <span>Kat <b id="dg-floor">1</b></span>
+            <span>En iyi <b id="dg-best">0</b></span>
+            <span class="wallet"><img data-icon="crystal" alt=""><b id="dg-kristal">0</b></span>
+          </div>
+          <div class="dg-stage"><canvas id="dungeon-canvas"></canvas></div>
+          <p class="page-hint">Takım kendi kendine savaşır; yenilirse bir kat geri çekilip tekrar dener. Kristalle yoldaş topla ve yükselt.</p>
+          <h3 class="section-title">Takım <span id="team-count"></span></h3>
+          <div id="companion-list" class="list"></div>
         </div>
 
         <div class="page" data-tab="skills" hidden>
@@ -114,8 +145,9 @@
 
       <nav id="tabs" role="tablist">
         <button class="tab active" type="button" role="tab" data-tab="hero" aria-selected="true"><img data-icon="hero" alt=""><span>Kahraman</span></button>
-        <button class="tab" type="button" role="tab" data-tab="party" aria-selected="false"><img data-icon="hood" alt=""><span>Yoldaşlar</span></button>
-        <button class="tab" type="button" role="tab" data-tab="skills" aria-selected="false"><img data-icon="skStorm" alt=""><span>Yetenekler</span></button>
+        <button class="tab" type="button" role="tab" data-tab="pet" aria-selected="false"><img data-icon="petDog" alt=""><span>Pet</span></button>
+        <button class="tab" type="button" role="tab" data-tab="dungeon" aria-selected="false"><img data-icon="helm" alt=""><span>Zindan</span></button>
+        <button class="tab" type="button" role="tab" data-tab="skills" aria-selected="false"><img data-icon="skStorm" alt=""><span>Yetenek</span></button>
         <button class="tab" type="button" role="tab" data-tab="rebirth" aria-selected="false"><img data-icon="soul" alt=""><span>Doğuş</span></button>
         <button class="tab" type="button" role="tab" data-tab="menu" aria-selected="false"><img data-icon="menu" alt=""><span>Menü</span></button>
       </nav>

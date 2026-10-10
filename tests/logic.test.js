@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as L from '../js/logic.js';
 import {
-  UPGRADES, HELPERS, SKILLS, ZONES, KILLS_PER_STAGE, BOSS_TIME, BOSS_HP_MULT, RESPAWN_DELAY,
+  UPGRADES, SKILLS, ZONES, PETS, COMPANIONS, PET_TRAINING, EGG_COST, MAX_STARS, DUPLICATE_KRISTAL,
+  BOSS_ELMAS, STARTING_ELMAS, FORM_MULT, KILLS_PER_STAGE, BOSS_TIME, BOSS_HP_MULT, RESPAWN_DELAY,
   PRESTIGE_MIN_STAGE, OFFLINE_MIN, OFFLINE_CAP, MAX_CRIT_CHANCE, MAX_SKILL_CRIT_CHANCE,
 } from '../js/config.js';
 import { SPRITES } from '../js/sprite-data.js';
@@ -27,7 +28,8 @@ test('sprites have equal-length rows and every pixel has a color', () => {
     const w = s.rows[0].length;
     for (const row of s.rows) {
       assert.equal(row.length, w, `${name}: row "${row}"`);
-      for (const ch of row) if (ch !== '.') assert.ok(s.pal[ch], `${name}: no color for '${ch}'`);
+      // Digits are pet evolution parts colored per form (checked in the pets test).
+      for (const ch of row) if (ch !== '.' && !/\d/.test(ch)) assert.ok(s.pal[ch], `${name}: no color for '${ch}'`);
     }
   }
 });
@@ -35,7 +37,8 @@ test('sprites have equal-length rows and every pixel has a color', () => {
 test('content tables point at existing sprites', () => {
   for (const u of UPGRADES) assert.ok(SPRITES[u.icon], u.id);
   for (const k of SKILLS) assert.ok(SPRITES[k.icon], k.id);
-  for (const h of HELPERS) assert.ok(SPRITES[h.sprite], h.id);
+  for (const c of COMPANIONS) assert.ok(SPRITES[c.sprite], c.id);
+  for (const p of PETS) assert.ok(SPRITES[p.sprite], p.id);
   for (const z of ZONES) for (const e of z.enemies) assert.ok(SPRITES[e.sprite], e.name);
 });
 
@@ -108,26 +111,24 @@ test('killing a boss unlocks the next stage at once', () => {
   assert.equal(s.stats.bossKills, 1);
 });
 
-test('helpers deal damage over time', () => {
+test('the pet deals damage over time', () => {
   const s = fresh();
-  s.helpers.archer = 10;
-  assert.equal(L.totalDps(s), HELPERS[0].baseDps * 10);
+  assert.equal(L.totalDps(s), 0);
+  s.training.train = 10;
+  assert.equal(L.totalDps(s), L.trainingDps(10));
   const hp = s.enemy.hp;
   L.tick(s, 0.1, noCrit);
   assert.ok(s.enemy.hp < hp);
 });
 
-test('milestones double damage every 25 levels', () => {
+test('sword milestones double damage every 25 levels', () => {
   const s = fresh();
-  const def = HELPERS[0];
-  assert.equal(L.helperDps(s, def, 25), def.baseDps * 25 * 2);
-  assert.equal(L.helperDps(s, def, 50), def.baseDps * 50 * 4);
   assert.equal(L.swordDamage(s, 24), 25);
   assert.equal(L.swordDamage(s, 25), 52);
 });
 
 test('bulk cost matches buying one level at a time', () => {
-  const def = HELPERS[3];
+  const def = PET_TRAINING;
   let sum = 0;
   for (let i = 0; i < 10; i++) sum += def.baseCost * def.growth ** (7 + i);
   assert.ok(Math.abs(L.costFor(def, 7, 10) - sum) <= 1);
@@ -154,12 +155,13 @@ test('purchase plans respect level caps and show a price when broke', () => {
 
 test('buy spends gold and refuses when short', () => {
   const s = fresh();
-  assert.equal(L.buy(s, 'helper', 'archer'), false);
+  assert.equal(L.buy(s, 'pet', 'train'), false);
   s.gold = 1000;
-  assert.equal(L.buy(s, 'helper', 'archer', 10), true);
-  assert.equal(s.helpers.archer, 10);
-  assert.equal(s.gold, 1000 - L.costFor(HELPERS[0], 0, 10));
-  assert.equal(L.buy(s, 'helper', 'nope'), false);
+  assert.equal(L.buy(s, 'pet', 'train', 10), true);
+  assert.equal(s.training.train, 10);
+  assert.equal(s.gold, 1000 - L.costFor(PET_TRAINING, 0, 10));
+  assert.equal(L.buy(s, 'pet', 'nope'), false);
+  assert.equal(L.buy(s, 'helper', 'archer'), false);
 });
 
 test('prestige needs the minimum stage, then resets the run but keeps souls and stats', () => {
@@ -170,7 +172,9 @@ test('prestige needs the minimum stage, then resets the run but keeps souls and 
 
   s.maxStage = 40;
   s.gold = 999;
-  s.helpers.mage = 5;
+  s.training.train = 5;
+  s.kristal = 77;
+  s.dungeon.best = 9;
   s.upgrades.sword = 50;
   s.stats.kills = 77;
   s.settings.sound = false;
@@ -181,7 +185,10 @@ test('prestige needs the minimum stage, then resets the run but keeps souls and 
   assert.equal(s.gold, 0);
   assert.equal(s.stage, 1);
   assert.equal(s.maxStage, 1);
-  assert.equal(s.helpers.mage, 0);
+  assert.equal(s.training.train, 0);
+  assert.equal(s.kristal, 77);
+  assert.equal(s.dungeon.best, 9);
+  assert.ok(s.pets.dog);
   assert.equal(s.upgrades.sword, 0);
   assert.equal(s.stats.kills, 77);
   assert.equal(s.stats.prestiges, 1);
@@ -189,10 +196,10 @@ test('prestige needs the minimum stage, then resets the run but keeps souls and 
   assert.ok(L.tapDamage(s) > 1);
 });
 
-test('offline gold needs helpers, a minimum absence and is capped', () => {
+test('offline gold needs a trained pet, a minimum absence and is capped', () => {
   const s = fresh();
   assert.equal(L.offlineGold(s, 3600), 0);
-  s.helpers.archer = 20;
+  s.training.train = 20;
   assert.equal(L.offlineGold(s, OFFLINE_MIN - 1), 0);
   const hour = L.offlineGold(s, 3600);
   assert.ok(hour > 0);
@@ -206,12 +213,12 @@ test('loadState accepts its own output and repairs bad data', () => {
   s.gold = 1234;
   s.maxStage = 9;
   s.stage = 7;
-  s.helpers.guard = 3;
+  s.training.train = 3;
   s.settings.buyAmount = 'max';
   const round = L.loadState(JSON.parse(JSON.stringify(L.serializeState(s))), noCrit);
   assert.equal(round.gold, 1234);
   assert.equal(round.stage, 7);
-  assert.equal(round.helpers.guard, 3);
+  assert.equal(round.training.train, 3);
   assert.equal(round.settings.buyAmount, 'max');
   assert.ok(round.enemy);
 
@@ -264,13 +271,13 @@ test('Öfke multiplies tap damage until it runs out, then cools down', () => {
   assert.equal(s.stats.skillsUsed, 1);
 });
 
-test('Savaş Narası boosts total DPS but not the per-companion shop values', () => {
+test('Savaş Narası boosts total DPS but not the shop value', () => {
   const s = withSkills(2);
-  s.helpers.archer = 10;
+  s.training.train = 10;
   const dps = L.totalDps(s);
   L.useSkill(s, 'warcry');
   assert.equal(L.totalDps(s), dps * L.skillPower('warcry', 2));
-  assert.equal(L.helperDps(s, HELPERS[0]), dps);
+  assert.equal(L.petDps(s), dps);
 });
 
 test('Keskin Bakış adds crit chance up to the skill cap', () => {
@@ -312,7 +319,7 @@ test('skill timers survive saves and rebirth, expire offline, and bad timers are
   assert.equal(round.skills.rage, 3);
   assert.deepEqual(round.skillTimers.rage, s.skillTimers.rage);
 
-  s.helpers.archer = 5;
+  s.training.train = 5;
   L.applyOffline(s, 3600);
   assert.deepEqual(s.skillTimers.rage, { active: 0, cooldown: 0 });
 

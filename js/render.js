@@ -1,7 +1,7 @@
 import { sprite, spriteRotated } from './sprites.js';
 import { HERO_HAND, SWORD_GRIP_ROW } from './sprite-data.js';
-import { HELPERS, ZONES } from './config.js';
-import { zoneIndex, formatNumber } from './logic.js';
+import { PETS, ZONES } from './config.js';
+import { zoneIndex, formatNumber, totalDps } from './logic.js';
 
 // Draws the battle into a small pixel buffer (about TARGET_W pixels wide), scales it up by a
 // whole number onto the visible canvas, then draws text (damage numbers, banners) at full
@@ -34,7 +34,7 @@ export function createRenderer(canvas) {
   let onCoin = () => {};
   let coinTargetCss = { x: 24, y: 24 };
 
-  const fx = { heroAttack: 0, slash: 0, slashY: 0, flash: 0, knock: 0, enter: 1, dying: null, shake: 0 };
+  const fx = { petTimer: 0.5, petAtk: 0, heroAttack: 0, slash: 0, slashY: 0, flash: 0, knock: 0, enter: 1, dying: null, shake: 0 };
   const particles = [];
   const coins = [];
   const numbers = [];
@@ -42,8 +42,6 @@ export function createRenderer(canvas) {
   const ripples = [];
   const weather = [];
   let banner = null;
-  const helperTimer = HELPERS.map((_, i) => 0.4 + i * 0.13);
-  const helperAtk = HELPERS.map(() => 0);
 
   // ---- Layout ----
 
@@ -220,49 +218,42 @@ export function createRenderer(canvas) {
 
   // ---- Actors ----
 
-  function ownedHelpers(state) {
-    const out = [];
-    HELPERS.forEach((h, i) => { if (state.helpers[h.id] > 0) out.push(i); });
-    return out;
+  // The active pet stands (or hovers) just behind the hero and attacks on its own.
+  function petLook(state) {
+    const pet = PETS.find((p) => p.id === state.activePet);
+    const owned = state.pets[state.activePet];
+    if (!pet || !owned) return null;
+    const sp = sprite(pet.sprite, pet.forms[owned.form - 1].colors);
+    return { pet, sp };
   }
 
-  // Up to 12 companions in three staggered rows behind the hero; slot 0 is nearest. Columns
-  // squeeze together when the scene is narrow.
-  function helperPos(slot) {
-    const row = slot % 3;
-    const col = Math.floor(slot / 3);
-    const first = heroX() - 11;
-    const step = Math.min(8, Math.max(4, (first - 6) / 3));
-    return { x: Math.round(first - col * step - row * 2), y: groundY - 11 - row * 4 };
+  function petPos(look) {
+    const x = heroX() - look.sp.w - 2;
+    const y = groundY - look.sp.h + 1 - (look.pet.float ? 7 : 0);
+    return { x, y };
   }
 
-  function drawHelpers(state, dt, enemyReady, box) {
-    const owned = ownedHelpers(state);
-    const placed = owned.map((i, slot) => ({ i, slot, ...helperPos(slot) }));
-    placed.sort((a, b2) => (b2.slot % 3) - (a.slot % 3)); // back rows first
-    for (const p of placed) {
-      const def = HELPERS[p.i];
-      helperTimer[p.i] -= dt;
-      helperAtk[p.i] = Math.max(0, helperAtk[p.i] - dt);
-      if (helperTimer[p.i] <= 0) {
-        helperTimer[p.i] = 1.1 + (p.i % 4) * 0.22 + Math.random() * 0.2;
-        if (enemyReady) {
-          helperAtk[p.i] = 0.15;
-          shots.push({
-            x0: p.x + 9, y0: p.y + 7, x1: box.x + 2 + Math.random() * 4, y1: box.cy + (Math.random() * 6 - 3),
-            t: 0, dur: 0.3 + Math.random() * 0.1, kind: def.shot, color: def.shotColor,
-          });
-        }
+  function drawPet(state, dt, box) {
+    const look = petLook(state);
+    if (!look) return;
+    const p = petPos(look);
+    fx.petAtk = Math.max(0, fx.petAtk - dt);
+    fx.petTimer -= dt;
+    if (fx.petTimer <= 0) {
+      fx.petTimer = 1 + Math.random() * 0.15;
+      if (box && totalDps(state) > 0) {
+        fx.petAtk = 0.15;
+        shots.push({
+          x0: p.x + look.sp.w, y0: p.y + look.sp.h / 2, x1: box.x + 2 + Math.random() * 4, y1: box.cy + (Math.random() * 6 - 3),
+          t: 0, dur: 0.3, kind: look.pet.shot, color: look.pet.shotColor,
+        });
       }
-      const sp = sprite(def.sprite, def.colors);
-      const bob = Math.floor(time * 2 + p.i * 0.5) % 2;
-      const x = p.x + (helperAtk[p.i] > 0 ? 1 : 0);
-      if ((p.slot % 3) > 0) b.globalAlpha = 0.85;
-      b.drawImage(sp.canvas, x, p.y + bob);
-      b.globalAlpha = 1;
     }
+    const bob = look.pet.float ? Math.round(Math.sin(time * 3) * 1.5) : Math.floor(time * 2 + 1) % 2;
+    if (!look.pet.float) drawShadow(p.x + look.sp.w / 2, look.sp.w * 0.7);
+    else drawShadow(p.x + look.sp.w / 2, look.sp.w * 0.4);
+    b.drawImage(look.sp.canvas, p.x + (fx.petAtk > 0 ? 2 : 0), p.y + bob);
   }
-
   function drawShadow(cx, w) {
     b.fillStyle = 'rgba(26,28,44,0.35)';
     b.fillRect(Math.round(cx - w / 2), groundY, Math.round(w), 1);
@@ -326,20 +317,18 @@ export function createRenderer(canvas) {
     }
   }
 
-  // Ongoing skill effects: embers off the hero (Öfke), sparkles over the companions
-  // (Savaş Narası) and blue glints around the enemy (Keskin Bakış).
+  // Ongoing skill effects: embers off the hero (Öfke), sparkles over the pet (Savaş Narası)
+  // and blue glints around the enemy (Keskin Bakış).
   function skillAuras(state, dt, box) {
     const t = state.skillTimers;
     const emit = (rate) => Math.random() < rate * dt;
     if (t.rage.active > 0 && emit(30)) {
       particles.push({ x: heroX() + 4 + Math.random() * 9, y: heroY() + 4 + Math.random() * 11, vx: Math.random() * 8 - 4, vy: -18 - Math.random() * 12, g: -10, life: 0.5, c: Math.random() < 0.5 ? '#ef7d57' : '#b13e53', size: 1 });
     }
-    if (t.warcry.active > 0) {
-      ownedHelpers(state).forEach((_, slot) => {
-        if (!emit(4)) return;
-        const p = helperPos(slot);
-        particles.push({ x: p.x + Math.random() * 10, y: p.y - 1, vx: 0, vy: -14, g: 0, life: 0.45, c: '#ffcd75', size: 1 });
-      });
+    const look = petLook(state);
+    if (t.warcry.active > 0 && look && emit(14)) {
+      const p = petPos(look);
+      particles.push({ x: p.x + Math.random() * look.sp.w, y: p.y - 1, vx: 0, vy: -14, g: 0, life: 0.45, c: '#ffcd75', size: 1 });
     }
     if (t.focus.active > 0 && box && emit(10)) {
       particles.push({ x: box.x + Math.random() * box.w, y: box.y + Math.random() * box.h, vx: 0, vy: -6, g: 0, life: 0.3, c: '#73eff7', size: 1 });
@@ -538,7 +527,7 @@ export function createRenderer(canvas) {
     const enemyReady = state.enemy.respawn <= 0 && fx.enter >= 1;
     drawHero(dt);
     const box = drawEnemy(state, dt);
-    drawHelpers(state, dt, enemyReady && box, box);
+    drawPet(state, dt, enemyReady ? box : null);
 
     if (fx.dying) {
       fx.dying.t -= dt;

@@ -93,7 +93,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
 #hud {
   position: absolute;
   inset: 0 0 auto 0;
-  padding: calc(var(--safe-top) + 8px) 10px 0;
+  padding: calc(var(--safe-top) + 12px) 10px 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -408,7 +408,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
 
 #tabs {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: var(--line);
   gap: 3px;
   border-top: 3px solid var(--line);
@@ -498,3 +498,97 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
 @media (min-height: 900px) {
   #battle { flex-basis: 46%; }
 }
+
+/* ---------- v0.4: version label, pets, dungeon ---------- */
+
+/* Deliberately faint: visible if you look for it, never in the way. */
+.version {
+  position: absolute;
+  top: var(--safe-top);
+  right: 0;
+  z-index: 2;
+  padding: 2px 8px 6px 12px;  /* bigger touch area than the text */
+  font-size: 9px;
+  line-height: 11px;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  opacity: 0.35;
+}
+.version:hover, .version:focus-visible { opacity: 0.8; }
+
+.changelog h3 { display: flex; justify-content: space-between; margin: 10px 0 4px; font-size: 16px; color: var(--gold); }
+.changelog h3:first-child { margin-top: 0; }
+.changelog h3 span { font-size: 11px; color: var(--dim); font-weight: 400; }
+.changelog ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.35; }
+.changelog li { margin-bottom: 3px; }
+#modal-body:has(.changelog) { max-height: 55vh; overflow-y: auto; }
+
+.section-title { display: flex; gap: 8px; align-items: baseline; margin: 6px 2px 0; font-size: 15px; }
+.section-title span { font-size: 12px; color: var(--dim); }
+
+.wallet { display: flex; gap: 14px; align-items: center; font-size: 14px; }
+.wallet span { display: inline-flex; align-items: center; gap: 4px; }
+.wallet img { width: 18px; height: 18px; }
+
+.pet-show {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+}
+.pet-img { width: 64px; height: 64px; object-fit: contain; }
+.pet-info { min-width: 0; line-height: 1.25; }
+.pet-tags { display: flex; gap: 6px; align-items: baseline; font-size: 12px; font-weight: 700; }
+.stars { color: var(--gold); letter-spacing: 1px; }
+.pet-name { font-size: 17px; }
+
+.buy-btn.crystal { background: #a7f070; }
+.buy-btn.crystal:disabled { background: #566c86; }
+.pixel-btn.gem { background: #41a6f6; color: var(--line); }
+.egg .pixel-btn.big { margin: 10px 0 8px; }
+
+.pet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pet-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--card);
+  border: 3px solid var(--line);
+  box-shadow: inset 0 0 0 2px var(--rarity);
+  line-height: 1.15;
+}
+.pet-tile img { width: 44px; height: 44px; object-fit: contain; filter: brightness(0) opacity(0.45); }
+.pet-tile.owned img { filter: none; }
+.pet-tile.active { background: var(--panel); box-shadow: inset 0 0 0 2px var(--rarity), 0 0 0 2px var(--gold); }
+.pet-tile:disabled { opacity: 0.75; }
+.pet-tile-name { font-size: 12px; font-weight: 700; text-align: center; }
+.pet-tile-stars { font-size: 10px; color: var(--rarity); }
+
+.egg-reveal { display: block; width: 96px; height: 96px; margin: 4px auto 6px; object-fit: contain; animation: reveal 0.5s steps(5); }
+@keyframes reveal { 0% { transform: scale(0.2) rotate(-20deg); } 60% { transform: scale(1.15); } }
+.modal-box .egg-rarity { text-align: center; font-size: 20px; font-weight: 700; margin-bottom: 4px !important; }
+
+.dg-head { display: flex; justify-content: space-between; align-items: center; padding: 0 2px; font-size: 14px; }
+.dg-head b { color: var(--gold); }
+.dg-stage { height: 150px; border: 3px solid var(--line); background: var(--line); }
+#dungeon-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+
+.role { font-size: 10px; padding: 1px 4px; border: 2px solid var(--line); color: var(--line); font-weight: 700; white-space: nowrap; }
+.role-tank { background: #94b0c2; }
+.role-dps { background: #ef7d57; }
+.role-mage { background: #c879f0; }
+.role-healer { background: #a7f070; }
+.item.in-team { box-shadow: inset 0 0 0 2px var(--gold), inset 0 -3px 0 rgba(0, 0, 0, 0.25); }
+.team-btn {
+  margin-top: 3px;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: var(--card-hi);
+  border: 2px solid var(--line);
+}
+.item.in-team .team-btn { background: var(--gold); color: var(--line); font-weight: 700; }
+.team-btn:disabled { opacity: 0.45; }

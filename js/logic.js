@@ -3,8 +3,11 @@ import {
   HP_BASE, HP_GROWTH, GOLD_PER_HP, RESPAWN_DELAY, BASE_CRIT_CHANCE, CRIT_CHANCE_STEP,
   MAX_CRIT_CHANCE, BASE_CRIT_MULT, CRIT_MULT_STEP, GREED_STEP, SPIRIT_STEP, MILESTONE_EVERY,
   MILESTONE_MULT, PRESTIGE_MIN_STAGE, SOUL_BONUS, OFFLINE_MIN, OFFLINE_CAP, OFFLINE_RATE,
-  BUY_AMOUNTS, UPGRADES, HELPERS, SKILLS, ZONES, MAX_SKILL_CRIT_CHANCE,
+  BUY_AMOUNTS, UPGRADES, SKILLS, ZONES, MAX_SKILL_CRIT_CHANCE, PET_TRAINING, PET_BASE_DPS,
+  PET_DPS_GROWTH, EGG_COST, STARTING_ELMAS, BOSS_ELMAS, STARTER_PET, FORM_MULT, STAR_BONUS, MAX_STARS,
+  DUPLICATE_KRISTAL, RARITIES, PETS, COMPANIONS, STARTER_TEAM, TEAM_SIZE,
 } from './config.js';
+import { tickDungeon } from './dungeon.js';
 
 // Pure game rules: no DOM, no timers. Functions that change the game take the state object,
 // mutate it, and push what happened ({ type: 'hit' | 'kill' | 'unlock' | 'stage' | 'spawn' |
@@ -22,11 +25,18 @@ export function newGame(rng = Math.random, now = Date.now()) {
     kills: 0,           // progress on maxStage
     autoAdvance: true,
     upgrades: Object.fromEntries(UPGRADES.map((u) => [u.id, 0])),
-    helpers: Object.fromEntries(HELPERS.map((h) => [h.id, 0])),
+    training: { [PET_TRAINING.id]: 0 },   // Pet Eğitimi level (gold, resets on rebirth)
+    pets: { [STARTER_PET]: { form: 1, stars: 0 } },
+    activePet: STARTER_PET,
+    elmas: STARTING_ELMAS,
+    kristal: 0,
+    companions: Object.fromEntries(COMPANIONS.map((c) => [c.id, STARTER_TEAM.includes(c.id) ? 1 : 0])),
+    dungeon: { floor: 1, best: 0, team: [...STARTER_TEAM] },
+    dungeonRun: null,  // live dungeon fight; not saved
     skills: Object.fromEntries(SKILLS.map((s) => [s.id, 0])),
     skillTimers: Object.fromEntries(SKILLS.map((s) => [s.id, { active: 0, cooldown: 0 }])),
     stormAcc: 0,       // fractional auto-taps carried between ticks
-    stats: { taps: 0, crits: 0, kills: 0, bossKills: 0, skillsUsed: 0, totalGold: 0, prestiges: 0, playTime: 0, bestStage: 1 },
+    stats: { taps: 0, crits: 0, kills: 0, bossKills: 0, skillsUsed: 0, eggs: 0, totalGold: 0, prestiges: 0, playTime: 0, bestStage: 1 },
     settings: { sound: true, buyAmount: 1 },
     enemy: null,
     lastSeen: now,
@@ -85,15 +95,30 @@ export function critChance(state) {
   return Math.min(MAX_SKILL_CRIT_CHANCE, base + activeSkillPower(state, 'focus', 0));
 }
 
-// One companion's damage per second, without Savaş Narası (the shop shows base values).
-export function helperDps(state, def, level = state.helpers[def.id]) {
-  return level > 0 ? def.baseDps * level * milestoneMultiplier(level) * soulMultiplier(state) : 0;
+// ---- Pets ----
+
+export const findPet = (id) => PETS.find((p) => p.id === id);
+export const findRarity = (id) => RARITIES.find((r) => r.id === id);
+
+// Damage of the Pet Eğitimi level alone (a 1× pet, no souls).
+export function trainingDps(level) {
+  return level > 0 ? PET_BASE_DPS * level * PET_DPS_GROWTH ** (level - 1) : 0;
+}
+
+// An owned pet's multiplier: rarity × evolution form × stars.
+export function petMultiplier(state, id) {
+  const owned = state.pets[id];
+  if (!owned) return 0;
+  return findRarity(findPet(id).rarity).mult * FORM_MULT[owned.form - 1] * (1 + STAR_BONUS * owned.stars);
+}
+
+// Pet damage per second without Savaş Narası (the shop shows base values).
+export function petDps(state, level = state.training[PET_TRAINING.id], id = state.activePet) {
+  return trainingDps(level) * petMultiplier(state, id) * soulMultiplier(state);
 }
 
 export function totalDps(state) {
-  let sum = 0;
-  for (const h of HELPERS) sum += helperDps(state, h);
-  return sum * activeSkillPower(state, 'warcry', 1);
+  return petDps(state) * activeSkillPower(state, 'warcry', 1);
 }
 
 export function swordDamage(state, level = state.upgrades.sword) {
@@ -193,7 +218,14 @@ function killEnemy(state, events) {
     if (state.kills >= KILLS_PER_STAGE) {
       state.maxStage++;
       state.kills = 0;
-      state.stats.bestStage = Math.max(state.stats.bestStage, state.maxStage);
+      if (state.maxStage > state.stats.bestStage) {
+        state.stats.bestStage = state.maxStage;
+        // A boss beaten for the first time ever pays elmas.
+        if (e.boss) {
+          state.elmas += BOSS_ELMAS;
+          events.push({ type: 'elmas', amount: BOSS_ELMAS });
+        }
+      }
       events.push({ type: 'unlock', stage: state.maxStage });
     }
   }
@@ -228,6 +260,7 @@ export function tap(state, rng = Math.random, events = [], auto = false) {
 export function tick(state, dt, rng = Math.random, events = []) {
   state.stats.playTime += dt;
   updateSkills(state, dt, rng, events);
+  tickDungeon(state, dt, rng, events);
   const e = state.enemy;
   if (e.respawn > 0) {
     e.respawn -= dt;
@@ -253,8 +286,8 @@ export function tick(state, dt, rng = Math.random, events = []) {
 
 // ---- Shop ----
 
-const TABLES = { upgrade: UPGRADES, helper: HELPERS, skill: SKILLS };
-const LEVEL_KEYS = { upgrade: 'upgrades', helper: 'helpers', skill: 'skills' };
+const TABLES = { upgrade: UPGRADES, pet: [PET_TRAINING], skill: SKILLS };
+const LEVEL_KEYS = { upgrade: 'upgrades', pet: 'training', skill: 'skills' };
 export const findDef = (kind, id) => TABLES[kind]?.find((d) => d.id === id);
 const levelsOf = (state, kind) => state[LEVEL_KEYS[kind]];
 
@@ -299,6 +332,55 @@ export function buy(state, kind, id, amount = 1) {
   return true;
 }
 
+// ---- Pet eggs, evolution and choice ----
+
+export function rollRarity(rng = Math.random) {
+  const total = RARITIES.reduce((s, r) => s + r.weight, 0);
+  let x = rng() * total;
+  for (const r of RARITIES) {
+    if ((x -= r.weight) < 0) return r;
+  }
+  return RARITIES[RARITIES.length - 1];
+}
+
+// Opens an egg for EGG_COST elmas. A new pet joins the collection; a duplicate adds a star,
+// or kristal once the pet has MAX_STARS. Returns { id, isNew, stars, kristal } or null.
+export function openEgg(state, rng = Math.random, events = []) {
+  if (state.elmas < EGG_COST) return null;
+  state.elmas -= EGG_COST;
+  state.stats.eggs++;
+  const rarity = rollRarity(rng);
+  const pool = PETS.filter((p) => p.rarity === rarity.id);
+  const pet = pool[Math.floor(rng() * pool.length)];
+  const owned = state.pets[pet.id];
+  const result = { type: 'egg', id: pet.id, isNew: !owned, stars: 0, kristal: 0 };
+  if (!owned) state.pets[pet.id] = { form: 1, stars: 0 };
+  else if (owned.stars < MAX_STARS) result.stars = ++owned.stars;
+  else { state.kristal += DUPLICATE_KRISTAL; result.kristal = DUPLICATE_KRISTAL; }
+  events.push(result);
+  return result;
+}
+
+export function evolveCost(state, id) {
+  const owned = state.pets[id];
+  if (!owned || owned.form >= FORM_MULT.length) return Infinity;
+  return findRarity(findPet(id).rarity).evolveCost[owned.form - 1];
+}
+
+export function evolvePet(state, id) {
+  const cost = evolveCost(state, id);
+  if (!(cost <= state.kristal)) return false;
+  state.kristal -= cost;
+  state.pets[id].form++;
+  return true;
+}
+
+export function selectPet(state, id) {
+  if (!state.pets[id] || state.activePet === id) return false;
+  state.activePet = id;
+  return true;
+}
+
 // ---- Prestige ----
 
 export function prestigeSouls(state) {
@@ -315,14 +397,15 @@ export function prestige(state, rng = Math.random) {
   fresh.souls = state.souls + gain;
   fresh.stats = { ...state.stats, prestiges: state.stats.prestiges + 1 };
   fresh.settings = state.settings;
-  fresh.skillTimers = state.skillTimers;
+  // Pets, gems, companions and the dungeon are permanent.
+  for (const k of ['skillTimers', 'pets', 'activePet', 'elmas', 'kristal', 'companions', 'dungeon', 'dungeonRun']) fresh[k] = state[k];
   Object.assign(state, fresh);
   return gain;
 }
 
 // ---- Offline progress ----
 
-// Gold the helpers would have earned while the game was closed, farming the current stage
+// Gold the pet would have earned while the game was closed, farming the current stage
 // (or the one before it on a boss stage) at OFFLINE_RATE efficiency.
 export function offlineGold(state, seconds) {
   const sec = Math.min(seconds, OFFLINE_CAP);
@@ -346,7 +429,7 @@ export function applyOffline(state, seconds) {
 // ---- Saving ----
 
 export function serializeState(state) {
-  const { enemy, ...rest } = state;
+  const { enemy, dungeonRun, ...rest } = state;
   return rest;
 }
 
@@ -364,7 +447,35 @@ export function loadState(raw, rng = Math.random, now = Date.now()) {
   s.kills = clamp(int(raw.kills, 0), 0, KILLS_PER_STAGE - 1);
   s.autoAdvance = raw.autoAdvance !== false;
   for (const u of UPGRADES) s.upgrades[u.id] = Math.min(u.max, int(raw.upgrades?.[u.id], 0));
-  for (const h of HELPERS) s.helpers[h.id] = int(raw.helpers?.[h.id], 0);
+  s.training[PET_TRAINING.id] = int(raw.training?.[PET_TRAINING.id], 0);
+  if (raw.pets && typeof raw.pets === 'object') {
+    for (const p of PETS) {
+      const owned = raw.pets[p.id];
+      if (!owned || typeof owned !== 'object') continue;
+      s.pets[p.id] = {
+        form: clamp(int(owned.form, 1), 1, FORM_MULT.length),
+        stars: clamp(int(owned.stars, 0), 0, MAX_STARS),
+      };
+    }
+  }
+  if (s.pets[raw.activePet]) s.activePet = raw.activePet;
+  s.elmas = int(raw.elmas, STARTING_ELMAS);
+  s.kristal = int(raw.kristal, 0);
+  for (const c of COMPANIONS) s.companions[c.id] = int(raw.companions?.[c.id], s.companions[c.id]);
+  if (raw.dungeon && typeof raw.dungeon === 'object') {
+    s.dungeon.best = int(raw.dungeon.best, 0);
+    s.dungeon.floor = clamp(int(raw.dungeon.floor, 1), 1, s.dungeon.best + 1);
+    if (Array.isArray(raw.dungeon.team)) {
+      s.dungeon.team = [...new Set(raw.dungeon.team)].filter((id) => s.companions[id] > 0).slice(0, TEAM_SIZE);
+    }
+  }
+  // Before v2, companions were gold-bought damage helpers: refund what they cost.
+  if (raw.helpers && typeof raw.helpers === 'object' && !(raw.v >= 2)) {
+    for (const c of COMPANIONS) {
+      const level = int(raw.helpers[c.id], 0);
+      if (level > 0) s.gold += costFor({ baseCost: c.legacyCost, growth: 1.07 }, 0, level);
+    }
+  }
   for (const k of SKILLS) {
     s.skills[k.id] = Math.min(k.max, int(raw.skills?.[k.id], 0));
     const t = raw.skillTimers?.[k.id];

@@ -1,6 +1,6 @@
 # Piksel Savaşçı
 
-A pixel-art idle clicker for the browser, built phone-first. The top half of the screen is the battle: the hero, the companions you hire and the enemy. The bottom half holds the upgrade lists and menus in tabs. It's plain HTML, CSS and JavaScript (ES modules) with no build step and no dependencies. All pixel art is drawn in code from text sprites. UI text is Turkish.
+A pixel-art idle clicker for the browser, built phone-first. The top half of the screen is the battle: the hero, their pet and the enemy. The bottom half holds the upgrade lists, the dungeon and the menus in tabs. It's plain HTML, CSS and JavaScript (ES modules) with no build step and no dependencies. All pixel art is drawn in code from text sprites. UI text is Turkish.
 
 **Play:** <https://codder-ctrl.github.io/piksel-savasci/> (GitHub Pages; every push to `main` redeploys it).
 
@@ -25,21 +25,34 @@ npm test
 - **Tap** the battle area (or press Space/Enter) to hit the enemy. Every kill drops gold.
 - **10 kills** clear a stage. Every 5th stage is a **boss** with a 30-second timer. If the timer runs out you drop back a stage and auto-advance stops until you press "Boss'a meydan oku".
 - Every 10 stages the **zone** changes: Yeşil Çayır, Karanlık Orman, Kristal Mağara, Kızıl Çöl, Buz Diyarı, Volkan (then the cycle repeats).
-- **Kahraman** tab: tap damage, crit chance, crit damage, gold bonus, and "Savaş Ruhu" (adds part of the companions' damage to each tap).
-- **Yoldaşlar** tab: 12 companions that attack on their own (damage per second). Each one unlocks after you hire the one before it. Sword and companion damage doubles every 25 levels.
-- **Yetenekler** tab: five active skills that unlock as you reach stages 5, 12, 20, 30 and 40 and level up with gold (max 10). Use them from the skill bar on the battle ground, or with keys 1–5 on a keyboard. Each one then cools down; cooldowns keep running while the game is closed.
+- **Kahraman** tab: tap damage, crit chance, crit damage, gold bonus, and "Savaş Ruhu" (adds part of the pet's damage to each tap). The sword doubles its damage every 25 levels.
+- **Pet** tab: one pet fights beside the hero and supplies the damage per second.
+  - *Pet Eğitimi* (gold) sets the base damage. It is shared by all pets and resets on rebirth.
+  - *Eggs* cost 100 elmas and give a random pet: Köpek and Kedi (Sıradan, 60%), Robot and Drone (Nadir, 30%), Ejderha (Destansı, 8.5%), Anka (Efsanevi, 1.5%). Rarity multiplies damage (×1 / ×1.6 / ×2.5 / ×4).
+  - A duplicate adds a star (+20% damage, up to 5), then pays 30 kristal.
+  - Each pet evolves twice with kristal (×2.5, then ×6 damage) and changes its look.
+  - Elmas come from the first win against each main-battle boss and each dungeon boss floor; new players start with 100.
+- **Zindan** tab: the 12 companions are dungeon fighters. A team of three auto-battles floor after floor on the tab's own little stage.
+  - Roles: tank (draws the attacks), vurucu (single target), büyücü (hits every enemy), şifacı (heals).
+  - Every 5th floor is a boss. A wiped team retreats one floor and tries again.
+  - Kills and clears pay kristal, which recruits and levels companions and evolves pets.
+  - The dungeon runs while the game is open (on any tab), not offline.
+- **Yetenek** tab: five active skills that unlock as you reach stages 5, 12, 20, 30 and 40 and level up with gold (max 10). Use them from the skill bar on the battle ground, or with keys 1–5 on a keyboard. Each one then cools down; cooldowns keep running while the game is closed.
   - *Öfke:* tap damage ×2–6.5 for 30 s (5 min cooldown)
-  - *Savaş Narası:* companion damage ×2–6.5 for 30 s (5 min)
+  - *Savaş Narası:* pet damage ×2–6.5 for 30 s (5 min)
   - *Kılıç Fırtınası:* 7–16 automatic hits per second for 20 s (10 min)
   - *Keskin Bakış:* +23–50% crit chance for 30 s (8 min)
   - *Altın Yağmuru:* instant gold worth 20–65 enemies (15 min)
-- **Doğuş** tab: from stage 20 on, start over for **Ruh Taşı** (soul stones). Each stone adds a permanent +10% to all damage.
+- **Doğuş** tab: from stage 20 on, start over for **Ruh Taşı** (soul stones). Each stone adds a permanent +10% to all damage. Pets, elmas, kristal, companions and the dungeon are kept.
 - **Menü** tab: stats, sound, save code export/import, full reset.
+- **Release notes:** tap the faint version label in the top-right corner.
 - Buttons buy ×1 / ×10 / ×100 / MAKS levels at a time. Holding a buy button keeps buying.
 
 ## Saving
 
-Progress saves to `localStorage` every 10 seconds, when the tab is hidden and when the page closes. Coming back after at least a minute pays out offline gold: half the companions' rate, capped at 8 hours. To move progress to another device, use Menü → Dışa Aktar and paste the code into İçe Aktar on the other device. If storage is unavailable (private windows), the game still runs but won't remember anything.
+Progress saves to `localStorage` every 10 seconds, when the tab is hidden and when the page closes. Coming back after at least a minute pays out offline gold: half the pet's rate, capped at 8 hours. To move progress to another device, use Menü → Dışa Aktar and paste the code into İçe Aktar on the other device. If storage is unavailable (private windows), the game still runs but won't remember anything.
+
+Saves from before v0.4 (when companions were gold-bought damage helpers) are migrated on load: the gold spent on companions is refunded, and the player gets the starter dog and 100 elmas.
 
 ## Installing on a phone (PWA)
 
@@ -50,7 +63,7 @@ Once it's on HTTPS:
 - **Android (Chrome):** open the site, then menu (⋮) → *Ana ekrana ekle* / *Uygulamayı yükle*.
 - **iPhone (Safari):** open the site, then Share → *Ana Ekrana Ekle*.
 
-The installed app opens full-screen without the browser bar, and works offline after the first visit. Updates arrive automatically: when online, the service worker always fetches fresh files and only falls back to its cache when offline, so a new deploy needs no version bump.
+The installed app opens full-screen without the browser bar, and works offline after the first visit. Updates arrive automatically: when online, the service worker always fetches fresh files and only falls back to its cache when offline, so a new deploy needs no cache version bump.
 
 On iPhone the home-screen app has its own storage, separate from Safari. To carry progress over from Safari, use Menü → Dışa Aktar in Safari and İçe Aktar in the app.
 
@@ -62,12 +75,17 @@ The icons in `icons/` are generated from the hero sprite: `npm run icons`.
 |---|---|
 | `index.html` | Markup: battle HUD, tab pages, modal; loads `styles.css` and `js/main.js` |
 | `styles.css` | All styles (mobile-first, max 520px column on desktop) |
-| `js/config.js` | Balance constants, upgrades, companions, zones and enemies |
-| `js/logic.js` | Pure game rules: damage, kills, stages, bosses, shop, prestige, offline gold, save validation, number formatting |
+| `js/config.js` | Balance constants, upgrades, skills, pets, companions, dungeon, zones and enemies |
+| `js/changelog.js` | Release notes and the current version |
+| `js/logic.js` | Pure game rules: damage, kills, stages, bosses, skills, pets and eggs, shop, prestige, offline gold, save validation and migration, number formatting |
+| `js/dungeon.js` | Pure dungeon rules: floors, auto-battle, roles, rewards, recruiting and leveling companions |
 | `js/sprite-data.js` | Pixel art as text rows plus palettes |
 | `js/sprites.js` | Builds and caches sprite canvases, white hit-flash versions and UI icon URLs |
-| `js/render.js` | The battle scene: pixel buffer, backgrounds, actors, projectiles, particles, coins, damage numbers |
-| `js/ui.js` | HUD, tabs, shop cards, rebirth/menu pages, modal and toast |
+| `js/render.js` | The battle scene: pixel buffer, backgrounds, hero, pet and enemy, projectiles, particles, coins, damage numbers |
+| `js/dungeon-view.js` | The dungeon stage on the Zindan tab |
+| `js/ui.js` | HUD, tabs, shop cards, skill bar, rebirth/menu pages, release notes, modal and toast |
+| `js/ui-pets.js` | The Pet tab |
+| `js/ui-dungeon.js` | The Zindan tab's companion list |
 | `js/store.js` | `localStorage` save/load and save codes |
 | `js/sound.js` | WebAudio chiptune effects |
 | `js/main.js` | Game loop, input, autosave, offline catch-up and UI handlers |
@@ -76,4 +94,5 @@ The icons in `icons/` are generated from the hero sprite: `npm run icons`.
 | `icons/` | App icons and favicon, generated by `tools/make-icons.js` |
 | `tools/make-icons.js` | Renders the icons from the sprites and writes PNGs (no dependencies) |
 | `tests/logic.test.js` | `node --test` suite for `logic.js`, `config.js` and the sprite data |
-| `tests/pwa.test.js` | Checks the service worker's precache list, the manifest icons and the HTML links |
+| `tests/pets-dungeon.test.js` | Pets, eggs, evolution, save migration and the dungeon |
+| `tests/pwa.test.js` | Checks the service worker's precache list, the manifest icons, the HTML links and the release-note version |
