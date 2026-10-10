@@ -13,6 +13,10 @@ Piksel Savaşçı: a phone-first pixel-art idle clicker. The top ~48% of the scr
 - When the browser pane is hidden, `requestAnimationFrame` doesn't fire and the game looks frozen. Stub it in the page (`window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16)`) and take one screenshot to flush the pending frame.
 - To load a test save, use Menü → İçe Aktar with `btoa(JSON.stringify(save))`. Writing `localStorage` and reloading doesn't work: the `pagehide` autosave overwrites it.
 
+## Deploying
+
+Repo: `codder-ctrl/piksel-savasci`. GitHub Pages serves the repo root of `main` at https://codder-ctrl.github.io/piksel-savasci/, so every push to `main` is a release; run `npm test` first. `.nojekyll` keeps Pages from running Jekyll. All paths in the page, manifest and `sw.js` are relative because the site lives under `/piksel-savasci/`, so keep them relative.
+
 ## Architecture
 
 `config` → `logic` → `store`; `sprite-data` → `sprites` → `render`, `ui`; everything → `main`. No import cycles.

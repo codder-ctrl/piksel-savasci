@@ -2,6 +2,8 @@
 
 A pixel-art idle clicker for the browser, built phone-first. The top half of the screen is the battle: the hero, the companions you hire and the enemy. The bottom half holds the upgrade lists and menus in tabs. It's plain HTML, CSS and JavaScript (ES modules) with no build step and no dependencies. All pixel art is drawn in code from text sprites. UI text is Turkish.
 
+**Play:** <https://codder-ctrl.github.io/piksel-savasci/> (GitHub Pages; every push to `main` redeploys it).
+
 ## Getting started
 
 Browsers won't load ES modules from a `file://` page, so serve the folder over HTTP:
